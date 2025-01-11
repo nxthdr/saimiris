@@ -54,6 +54,7 @@ pub async fn handle(m: &BorrowedMessage<'_>) -> Result<()> {
             ""
         }
     };
+
     info!(
         "key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
         m.key(),
@@ -63,11 +64,14 @@ pub async fn handle(m: &BorrowedMessage<'_>) -> Result<()> {
         m.offset(),
         m.timestamp()
     );
+
     if let Some(headers) = m.headers() {
         for header in headers.iter() {
             info!("  Header {:#?}: {:?}", header.key, header.value);
         }
     }
+
+    // Probing
     let config = create_config();
     let payload = decode_payload(payload)?;
 
