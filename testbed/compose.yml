@@ -3,6 +3,28 @@ services:
     image: vectorized/redpanda:latest
     command: redpanda start --check=false --overprovisioned --smp 1 --memory 500M
     volumes:
-      - ./config/redpanda/redpanda.yml:/etc/redpanda/redpanda.yaml:ro
+    - ./config/redpanda/redpanda.yml:/etc/redpanda/redpanda.yaml:ro
     ports:
-      - "9092:9092"
+    - "9092:9092"
+    networks:
+      testbed:
+        ipv4_address: 10.0.0.100
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    volumes:
+    - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    networks:
+      testbed:
+        ipv4_address: 10.0.0.200
+    depends_on:
+      - redpanda
+
+networks:
+  testbed:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24
+          gateway: 10.0.0.1

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use caracat::models::Probe;
 use caracat::rate_limiter::RateLimitingMethod;
-use log::{info, warn};
-use rdkafka::message::BorrowedMessage;
-use rdkafka::message::{Headers, Message};
+// use log::{info, warn};
+// use rdkafka::message::BorrowedMessage;
+// use rdkafka::message::{Headers, Message};
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio::task;
 
 use crate::prober::probe;
+use crate::producer::produce;
 
 /// Probing configuration.
 #[derive(Debug)]
@@ -79,31 +80,39 @@ fn decode_payload(payload: &str) -> Result<Payload> {
     })
 }
 
-pub async fn handle(m: &BorrowedMessage<'_>) -> Result<()> {
-    let payload = match m.payload_view::<str>() {
-        None => "",
-        Some(Ok(s)) => s,
-        Some(Err(e)) => {
-            warn!("Error while deserializing message payload: {:?}", e);
-            ""
-        }
-    };
+// pub async fn handle(m: &BorrowedMessage<'_>) -> Result<()> {
+pub async fn handle(
+    brokers: &str,
+    _in_group_id: &str,
+    _in_topics: &[&str],
+    out_topic: &str,
+) -> Result<()> {
+    // let payload = match m.payload_view::<str>() {
+    //     None => "",
+    //     Some(Ok(s)) => s,
+    //     Some(Err(e)) => {
+    //         warn!("Error while deserializing message payload: {:?}", e);
+    //         ""
+    //     }
+    // };
 
-    info!(
-        "key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
-        m.key(),
-        payload,
-        m.topic(),
-        m.partition(),
-        m.offset(),
-        m.timestamp()
-    );
+    // info!(
+    //     "key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
+    //     m.key(),
+    //     payload,
+    //     m.topic(),
+    //     m.partition(),
+    //     m.offset(),
+    //     m.timestamp()
+    // );
 
-    if let Some(headers) = m.headers() {
-        for header in headers.iter() {
-            info!("  Header {:#?}: {:?}", header.key, header.value);
-        }
-    }
+    // if let Some(headers) = m.headers() {
+    //     for header in headers.iter() {
+    //         info!("  Header {:#?}: {:?}", header.key, header.value);
+    //     }
+    // }
+
+    let payload = "2606:4700:4700::1111,1,32";
 
     // Probing
     let config = create_config();
@@ -119,18 +128,10 @@ pub async fn handle(m: &BorrowedMessage<'_>) -> Result<()> {
             protocol: caracat::models::L4::ICMPv6,
         });
     }
-    let result = task::spawn_blocking(move || {
-        probe(
-            config,
-            probes_to_send.into_iter(),
-            Some(String::from("./test.csv")),
-        )
-    })
-    .await?;
+    let result = task::spawn_blocking(move || probe(config, probes_to_send.into_iter())).await?;
 
-    if let Err(e) = result {
-        warn!("Error while probing: {:?}", e);
-    }
+    let (_, _, results) = result?;
+    produce(brokers, out_topic, results).await;
 
     Ok(())
 }

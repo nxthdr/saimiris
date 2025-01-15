@@ -1,6 +1,7 @@
 mod consumer;
 mod handler;
 mod prober;
+mod producer;
 
 use anyhow::Result;
 use chrono::Local;
@@ -9,7 +10,8 @@ use clap_verbosity_flag::{InfoLevel, Verbosity};
 use env_logger::Builder;
 use std::io::Write;
 
-use crate::consumer::consume;
+// use crate::consumer::consume;
+use crate::handler::handle;
 
 #[derive(CliParser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -40,10 +42,12 @@ async fn main() -> Result<()> {
     set_logging(&cli);
 
     let brokers = "localhost:9092";
-    let group_id = "osiris";
-    let topics = vec!["osiris"];
+    let in_group_id = "osiris";
+    let in_topics = vec!["osiris"];
+    let out_topic = "results";
 
-    consume(brokers, group_id, &topics).await;
+    // consume(brokers, group_id, &topics).await;
+    let _ = handle(&brokers, &in_group_id, &in_topics, &out_topic).await;
 
     Ok(())
 }

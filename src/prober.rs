@@ -4,7 +4,6 @@ use hyperloglog::HyperLogLog;
 
 use std::fmt::Display;
 use std::fmt::Formatter;
-use std::io::{stdout, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::sleep;
@@ -13,7 +12,7 @@ use std::thread::JoinHandle;
 use log::{error, info, trace};
 
 use crate::handler::Config;
-use caracat::models::Probe;
+use caracat::models::{Probe, Reply};
 use caracat::rate_limiter::RateLimiter;
 use caracat::receiver::Receiver;
 use caracat::sender::Sender;
@@ -22,8 +21,11 @@ use caracat::sender::Sender;
 pub fn probe<T: Iterator<Item = Probe>>(
     config: Config,
     probes: T,
-    csv_output: Option<String>,
-) -> Result<(SendStatistics, ReceiveStatistics)> {
+) -> Result<(
+    SendStatistics,
+    ReceiveStatistics,
+    Arc<Mutex<Vec<caracat::models::Reply>>>,
+)> {
     info!("{:?}", config);
 
     let rate_limiter = RateLimiter::new(
@@ -36,7 +38,6 @@ pub fn probe<T: Iterator<Item = Probe>>(
         config.interface.clone(),
         config.instance_id,
         config.integrity_check,
-        csv_output,
     );
 
     let mut prober = SendLoop::new(
@@ -49,8 +50,8 @@ pub fn probe<T: Iterator<Item = Probe>>(
         rate_limiter,
         Sender::new(
             &config.interface,
-            None,
-            None,
+            config.src_ipv4_addr,
+            config.src_ipv6_addr,
             config.instance_id,
             config.dry_run,
         )?,
@@ -63,27 +64,26 @@ pub fn probe<T: Iterator<Item = Probe>>(
     // TODO: Cleaner way?
     let final_prober_statistics = *prober.statistics().lock().unwrap();
     let final_receiver_statistics = receiver.statistics().lock().unwrap().clone();
+    let results = Arc::clone(&receiver.results);
 
     receiver.stop();
 
-    Ok((final_prober_statistics, final_receiver_statistics))
+    Ok((
+        final_prober_statistics,
+        final_receiver_statistics,
+        Arc::clone(&results),
+    ))
 }
 
-// The pcap crate doesn't support `pcap_loop` and `pcap_breakloop`,
-// so we implement our own looping mechanism.
 pub struct ReceiveLoop {
     handle: JoinHandle<()>,
     stopped: Arc<Mutex<bool>>,
     statistics: Arc<Mutex<ReceiveStatistics>>,
+    results: Arc<Mutex<Vec<Reply>>>,
 }
 
 impl ReceiveLoop {
-    pub fn new(
-        interface: String,
-        instance_id: u16,
-        integrity_check: bool,
-        output_csv: Option<String>,
-    ) -> Self {
+    pub fn new(interface: String, instance_id: u16, integrity_check: bool) -> Self {
         // By default if a thread panic, the other threads are not affected and the error
         // is only surfaced when joining the thread. However since this is a long-lived thread,
         // we're not calling join until the end of the process. Since this loop is critical to
@@ -94,20 +94,23 @@ impl ReceiveLoop {
         let statistics = Arc::new(Mutex::new(ReceiveStatistics::default()));
         let statistics_thr = statistics.clone();
 
+        let results = Arc::new(Mutex::new(vec![]));
+        let results_thr = results.clone();
+
         let handle = thread::spawn(move || {
             let mut receiver = Receiver::new_batch(&interface).unwrap();
 
-            let wtr: Box<dyn Write> = match output_csv {
-                Some(output_csv) => {
-                    let file = std::fs::File::create(output_csv).unwrap();
-                    Box::new(std::io::BufWriter::new(file))
-                }
-                None => Box::new(stdout().lock()),
-            };
+            // let wtr: Box<dyn Write> = match output_csv {
+            //     Some(output_csv) => {
+            //         let file = std::fs::File::create(output_csv).unwrap();
+            //         Box::new(std::io::BufWriter::new(file))
+            //     }
+            //     None => Box::new(stdout().lock()),
+            // };
 
-            let mut csv_writer = csv::WriterBuilder::new()
-                .has_headers(false) // TODO: Set to true, but how to serialize MPLS labels?
-                .from_writer(wtr);
+            // let mut csv_writer = csv::WriterBuilder::new()
+            //     .has_headers(false) // TODO: Set to true, but how to serialize MPLS labels?
+            //     .from_writer(wtr);
 
             loop {
                 // TODO: Cleanup this loop & statistics handling
@@ -117,6 +120,9 @@ impl ReceiveLoop {
                 statistics.pcap_received = pcap_statistics.received;
                 statistics.pcap_dropped = pcap_statistics.dropped;
                 statistics.pcap_if_dropped = pcap_statistics.if_dropped;
+
+                let mut results = results_thr.lock().unwrap();
+
                 match result {
                     Ok(reply) => {
                         trace!("{:?}", reply);
@@ -130,7 +136,8 @@ impl ReceiveLoop {
                                     .icmp_messages_excl_dest
                                     .insert(&reply.reply_src_addr);
                             }
-                            csv_writer.serialize(reply).unwrap();
+
+                            results.push(reply);
                             // TODO: Write round column.
                             // TODO: Compare output with caracal (capture timestamp resolution?)
                         } else {
@@ -158,12 +165,13 @@ impl ReceiveLoop {
                     break;
                 }
             }
-            csv_writer.flush().unwrap();
         });
+
         ReceiveLoop {
             handle,
             stopped,
             statistics,
+            results,
         }
     }
 
@@ -270,7 +278,6 @@ impl SendLoop {
         &self.statistics
     }
 }
-
 
 #[derive(Clone, Debug)]
 pub struct ReceiveStatistics {
