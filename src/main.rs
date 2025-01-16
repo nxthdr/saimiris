@@ -16,6 +16,10 @@ use crate::handler::handle;
 #[derive(CliParser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 struct Cli {
+    /// Prober ID
+    #[clap(long, default_value = "0")]
+    prober_id: u16,
+
     /// Kafka brokers
     #[clap(long, default_value = "localhost:9092")]
     brokers: String,
@@ -62,6 +66,7 @@ async fn main() -> Result<()> {
     set_logging(&cli);
 
     match handle(
+        cli.prober_id,
         &cli.brokers,
         &cli.in_topics,
         &cli.in_group_id,

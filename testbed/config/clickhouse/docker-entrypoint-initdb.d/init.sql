@@ -2,6 +2,7 @@ CREATE DATABASE osiris;
 CREATE TABLE osiris.results_broker
 (
     timestamp DateTime64,
+    prober_id UInt16,
     reply_src_addr IPv6,
     reply_dst_addr IPv6,
     reply_id UInt16,
@@ -32,6 +33,7 @@ SETTINGS
 CREATE TABLE osiris.results
 (
     timestamp DateTime64,
+    prober_id UInt16,
     reply_src_addr IPv6,
     reply_dst_addr IPv6,
     reply_id UInt16,

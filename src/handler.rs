@@ -138,6 +138,7 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
 }
 
 pub async fn handle(
+    prober_id: u16,
     brokers: &str,
     _in_topics: &str,
     _in_group_id: &str,
@@ -154,7 +155,7 @@ pub async fn handle(
     let (_, _, results) = result?;
 
     // Produce the results to Kafka topic
-    produce(brokers, out_topic, results).await;
+    produce(brokers, out_topic, prober_id, results).await;
 
     Ok(())
 }

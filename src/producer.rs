@@ -20,9 +20,10 @@ fn format_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
         + "]"
 }
 
-fn format_reply(reply: &Reply) -> String {
+fn format_reply(prober_id: u16, reply: &Reply) -> String {
     let mut output = vec![];
     output.push(format!("{}", reply.capture_timestamp.as_millis()));
+    output.push(format!("{}", prober_id));
     output.push(format!("{}", reply.reply_src_addr));
     output.push(format!("{}", reply.reply_dst_addr));
     output.push(format!("{}", reply.reply_id));
@@ -46,7 +47,12 @@ fn format_reply(reply: &Reply) -> String {
     output.join(",")
 }
 
-pub async fn produce(brokers: &str, topic_name: &str, results: Arc<Mutex<Vec<Reply>>>) {
+pub async fn produce(
+    brokers: &str,
+    topic_name: &str,
+    prober_id: u16,
+    results: Arc<Mutex<Vec<Reply>>>,
+) {
     let producer: &FutureProducer = &ClientConfig::new()
         .set("bootstrap.servers", brokers)
         .set("message.timeout.ms", "5000")
@@ -57,7 +63,7 @@ pub async fn produce(brokers: &str, topic_name: &str, results: Arc<Mutex<Vec<Rep
         let _ = producer
             .send(
                 FutureRecord::to(topic_name)
-                    .payload(&format!("{}", format_reply(result)))
+                    .payload(&format!("{}", format_reply(prober_id, result)))
                     .key(&format!("Key"))
                     .headers(OwnedHeaders::new().insert(Header {
                         key: "header_key",
