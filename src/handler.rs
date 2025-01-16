@@ -64,16 +64,16 @@ fn create_config() -> Config {
     }
 }
 
-struct Payload {
+struct Target {
     prefix: IpNet,
     min_ttl: u8,
     max_ttl: u8,
     n_flows: u64,
 }
 
-fn decode_payload(payload: &str) -> Result<Payload> {
+fn decode_payload(payload: &str) -> Result<Target> {
     let parts: Vec<&str> = payload.split(',').collect();
-    Ok(Payload {
+    Ok(Target {
         prefix: parts[0].parse()?,
         min_ttl: parts[1].parse()?,
         max_ttl: parts[2].parse()?,
@@ -81,21 +81,21 @@ fn decode_payload(payload: &str) -> Result<Payload> {
     })
 }
 
-fn generate_probes(payload: &Payload) -> Result<Vec<Probe>> {
+fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
     // TODO: We should pass an iterator instead of a vector.
     let mut probes = vec![];
 
     // First start by dividing the prefix into /24s or /64s, if necessary.
-    let subnets = match payload.prefix {
+    let subnets = match target.prefix {
         IpNet::V4(_) => {
-            let prefix_len = payload.prefix.prefix_len();
+            let prefix_len = target.prefix.prefix_len();
             let target_len = if prefix_len > 24 { prefix_len } else { 24 };
-            payload.prefix.subnets(target_len)
+            target.prefix.subnets(target_len)
         }
         IpNet::V6(_) => {
-            let prefix_len = payload.prefix.prefix_len();
+            let prefix_len = target.prefix.prefix_len();
             let target_len = if prefix_len > 64 { prefix_len } else { 64 };
-            payload.prefix.subnets(target_len)
+            target.prefix.subnets(target_len)
         }
     }?;
 
@@ -106,11 +106,11 @@ fn generate_probes(payload: &Payload) -> Result<Vec<Probe>> {
         // TODO: implement mapper-like generator such as the ones in diamond-miner.
         // https://github.com/dioptra-io/diamond-miner/blob/main/diamond_miner/mappers.py
         let mut prefix_hosts = subnet.hosts();
-        if payload.n_flows > prefix_hosts.count().try_into()? {
+        if target.n_flows > prefix_hosts.count().try_into()? {
             return Err(anyhow::anyhow!("Not enough hosts in the prefix"));
         }
 
-        for _ in 0..payload.n_flows {
+        for _ in 0..target.n_flows {
             let dst_addr = prefix_hosts.next().unwrap();
 
             // Randomize the probes order within a flow.
@@ -119,7 +119,7 @@ fn generate_probes(payload: &Payload) -> Result<Vec<Probe>> {
             // The rational is to avoid results errors due to path changes.
             // So, for now, probes belonging to the same traceroute flow will be sent close in time.
             // TODO: is this shuffle fast?
-            let mut ttls: Vec<u8> = (payload.min_ttl..payload.max_ttl).collect();
+            let mut ttls: Vec<u8> = (target.min_ttl..target.max_ttl).collect();
             ttls.shuffle(&mut thread_rng());
 
             for i in ttls {
@@ -139,28 +139,21 @@ fn generate_probes(payload: &Payload) -> Result<Vec<Probe>> {
 
 pub async fn handle(
     brokers: &str,
+    _in_topics: &str,
     _in_group_id: &str,
-    _in_topics: &[&str],
     out_topic: &str,
+    target: &str,
 ) -> Result<()> {
-    let payload = "2606:4700:4700::1111/128,1,32,1";
+    // Probe Generation
+    let config = create_config();
+    let target = decode_payload(target)?;
+    let probes_to_send = generate_probes(&target)?;
 
     // Probing
-    let config = create_config();
-    let payload = decode_payload(payload)?;
-
-    let probes_to_send = generate_probes(&payload);
-    let probes_to_send = match probes_to_send {
-        Ok(probes) => probes,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            return Ok(());
-        }
-    };
-
     let result = task::spawn_blocking(move || probe(config, probes_to_send.into_iter())).await?;
-
     let (_, _, results) = result?;
+
+    // Produce the results to Kafka topic
     produce(brokers, out_topic, results).await;
 
     Ok(())

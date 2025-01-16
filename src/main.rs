@@ -16,6 +16,26 @@ use crate::handler::handle;
 #[derive(CliParser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 struct Cli {
+    /// Kafka brokers
+    #[clap(long, default_value = "localhost:9092")]
+    brokers: String,
+
+    /// Kafka consumer topics (comma separated)
+    #[clap(long, default_value = "osiris")]
+    in_topics: String,
+
+    /// Kafka consumer group ID
+    #[clap(long, default_value = "osiris")]
+    in_group_id: String,
+
+    /// Kafka producer topic
+    #[clap(long, default_value = "results")]
+    out_topic: String,
+
+    /// Target (eg., 2606:4700:4700::1111/128,1,32,1)
+    #[arg(index = 1)]
+    target: String,
+
     /// Verbosity level
     #[clap(flatten)]
     verbose: Verbosity<InfoLevel>,
@@ -41,13 +61,18 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     set_logging(&cli);
 
-    let brokers = "localhost:9092";
-    let in_group_id = "osiris";
-    let in_topics = vec!["osiris"];
-    let out_topic = "results";
-
-    // consume(brokers, group_id, &topics).await;
-    let _ = handle(&brokers, &in_group_id, &in_topics, &out_topic).await;
+    match handle(
+        &cli.brokers,
+        &cli.in_topics,
+        &cli.in_group_id,
+        &cli.out_topic,
+        &cli.target,
+    )
+    .await
+    {
+        Ok(_) => (),
+        Err(e) => log::error!("Error: {}", e),
+    }
 
     Ok(())
 }
