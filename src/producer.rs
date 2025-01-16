@@ -32,7 +32,7 @@ fn format_reply(reply: &Reply) -> String {
     output.push(format!("{}", reply.reply_icmp_type));
     output.push(format!("{}", reply.reply_icmp_code));
     output.push(format!("{}", format_mpls_labels(&reply.reply_mpls_labels)));
-    // TODO probe_src_addr
+    output.push(format!("{}", reply.probe_src_addr));
     output.push(format!("{}", reply.probe_dst_addr));
     output.push(format!("{}", reply.probe_id));
     output.push(format!("{}", reply.probe_size));
