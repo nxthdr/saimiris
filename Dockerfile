@@ -1,7 +1,7 @@
 FROM rust:latest AS builder
 
 RUN apt-get update \
-    && apt-get install -y libpcap-dev \
+    && apt-get install -y libpcap-dev libsasl2-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -13,7 +13,7 @@ RUN cargo install --path .
 FROM debian:stable-slim
 
 RUN apt-get update \
-    && apt-get install -y libpcap-dev openssl \
+    && apt-get install -y libpcap-dev libsasl2-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/cargo/bin/osiris /app/osiris

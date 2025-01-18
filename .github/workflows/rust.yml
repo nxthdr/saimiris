@@ -12,7 +12,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - run: sudo apt install libpcap-dev
+    - run: sudo apt install libpcap-dev libsasl2-dev libssl-dev
     - name: Build
       run: cargo build --verbose
     - name: Run tests
