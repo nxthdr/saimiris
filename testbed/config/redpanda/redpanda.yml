@@ -7,11 +7,13 @@ redpanda:
         port: 33145
     kafka_api:
         - address: 0.0.0.0
-          name: internal
-          port: 9092
-        - address: 0.0.0.0
           name: external
+          port: 9092
+          authentication_method: sasl
+        - address: 0.0.0.0
+          name: internal
           port: 9093
+          authentication_method: none
     admin:
         address: 0.0.0.0
         port: 9644
@@ -20,10 +22,10 @@ redpanda:
         port: 33145
     advertised_kafka_api:
         - address: localhost
-          name: internal
+          name: external
           port: 9092
         - address: 10.0.0.100
-          name: external
+          name: internal
           port: 9093
     developer_mode: true
     auto_create_topics_enabled: true

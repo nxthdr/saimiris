@@ -1,9 +1,21 @@
 use caracat::models::{MPLSLabel, Reply};
+use log::info;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+pub struct SaslAuth {
+    pub username: String,
+    pub password: String,
+    pub mechanism: String,
+}
+
+pub enum KafkaAuth {
+    SASL(SaslAuth),
+    PLAINTEXT,
+}
 
 fn format_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
     String::from("[")
@@ -51,16 +63,28 @@ pub async fn produce(
     brokers: &str,
     topic_name: &str,
     prober_id: u16,
+    auth: KafkaAuth,
     results: Arc<Mutex<Vec<Reply>>>,
 ) {
-    let producer: &FutureProducer = &ClientConfig::new()
-        .set("bootstrap.servers", brokers)
-        .set("message.timeout.ms", "5000")
-        .create()
-        .expect("Producer creation error");
+    let producer: &FutureProducer = match auth {
+        KafkaAuth::PLAINTEXT => &ClientConfig::new()
+            .set("bootstrap.servers", brokers)
+            .set("message.timeout.ms", "5000")
+            .create()
+            .expect("Producer creation error"),
+        KafkaAuth::SASL(scram_auth) => &ClientConfig::new()
+            .set("bootstrap.servers", brokers)
+            .set("message.timeout.ms", "5000")
+            .set("sasl.username", scram_auth.username)
+            .set("sasl.password", scram_auth.password)
+            .set("sasl.mechanisms", scram_auth.mechanism)
+            .set("security.protocol", "SASL_PLAINTEXT")
+            .create()
+            .expect("Producer creation error"),
+    };
 
     for result in results.lock().unwrap().iter() {
-        let _ = producer
+        let delivery_status = producer
             .send(
                 FutureRecord::to(topic_name)
                     .payload(&format!("{}", format_reply(prober_id, result)))
@@ -72,6 +96,6 @@ pub async fn produce(
                 Duration::from_secs(0),
             )
             .await;
+        info!("{:?}", delivery_status);
     }
-    // let delivery_status = info!("Delivery status: {:?}", delivery_status);
 }

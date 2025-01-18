@@ -1,5 +1,5 @@
-CREATE DATABASE osiris;
-CREATE TABLE osiris.results_broker
+CREATE DATABASE IF NOT EXISTS osiris;
+CREATE TABLE osiris.from_kafka
 (
     timestamp DateTime64,
     prober_id UInt16,
@@ -26,8 +26,8 @@ CREATE TABLE osiris.results_broker
 ENGINE = Kafka()
 SETTINGS
     kafka_broker_list = '10.0.0.100:9093',
-    kafka_topic_list = 'results',
-    kafka_group_name = 'clickhouse-results-group',
+    kafka_topic_list = 'osiris-results',
+    kafka_group_name = 'clickhouse-osiris-group',
     kafka_format = 'CSV';
 
 CREATE TABLE osiris.results
@@ -64,5 +64,5 @@ ORDER BY (
     probe_ttl
 );
 
-CREATE MATERIALIZED VIEW osiris.results_broker_mv TO osiris.results
-AS SELECT * FROM osiris.results_broker;
+CREATE MATERIALIZED VIEW osiris.from_kafka_mv TO osiris.results
+AS SELECT * FROM osiris.from_kafka;

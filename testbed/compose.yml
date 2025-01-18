@@ -1,8 +1,8 @@
 services:
   redpanda:
-    image: vectorized/redpanda:latest
-    command: redpanda start --check=false --overprovisioned --smp 1 --memory 500M
+    image: redpandadata/redpanda:latest
     volumes:
+    - ./config/redpanda/entrypoint.sh:/entrypoint.sh:ro
     - ./config/redpanda/redpanda.yml:/etc/redpanda/redpanda.yaml:ro
     ports:
     - "9092:9092"

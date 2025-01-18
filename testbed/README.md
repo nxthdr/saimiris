@@ -2,8 +2,9 @@
 
 Docker Compose setup to facilitate the tests of Osiris.
 
-The testbed consists in a Redpanda and ClickHouse instance. Required ClickHouse [tables](config/clickhouse/docker-entrypoint-initdb.d/init.sql) are created on startup. The `osiris.results_broker` is using the ClickHouse [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) to fetch the results from Redpanda. The `osiris.results` table is used to store the results.
+The testbed consists in a Redpanda and ClickHouse instance. Required ClickHouse [tables](config/clickhouse/docker-entrypoint-initdb.d/init.sql) are created on startup. The `osiris.from_kafka` is using the ClickHouse [Kafka engine](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka) to fetch the results from Redpanda. The `osiris.results` table is used to store the results.
 
+As an example, Redpanda is configured with SASL authentication, and uses the default Osiris SASL credentials.
 
 ## Usage
 
@@ -13,10 +14,10 @@ The testbed consists in a Redpanda and ClickHouse instance. Required ClickHouse 
 docker compose up -d --force-recreate --renew-anon-volumes
 ```
 
-* Run Osiris (from the root of the repository)
+* Run Osiris (from the root of the repository) with SASL authentication protocol
 
 ```sh
-cargo run
+cargo run -- --out-auth-protocol=SASL 2606:4700:4700::1111/128,1,32,1
 ```
 
 * Stop the testbed

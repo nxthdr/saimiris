@@ -16,5 +16,5 @@ ipnet = "2.10.1"
 log = "0.4.22"
 pcap = "2.2.0"
 rand = "0.8.5"
-rdkafka = { version = "0.37.0" }
+rdkafka = { version = "0.37.0", features = ["sasl", "ssl"] }
 tokio = { version = "1.42.0", features = ["full"] }

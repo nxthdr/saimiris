@@ -10,7 +10,7 @@ use std::time::Duration;
 use tokio::task;
 
 use crate::prober::probe;
-use crate::producer::produce;
+use crate::producer::{produce, KafkaAuth};
 
 /// Probing configuration.
 #[derive(Debug)]
@@ -143,6 +143,7 @@ pub async fn handle(
     _in_topics: &str,
     _in_group_id: &str,
     out_topic: &str,
+    out_auth: KafkaAuth,
     target: &str,
 ) -> Result<()> {
     // Probe Generation
@@ -155,7 +156,7 @@ pub async fn handle(
     let (_, _, results) = result?;
 
     // Produce the results to Kafka topic
-    produce(brokers, out_topic, prober_id, results).await;
+    produce(brokers, out_topic, prober_id, out_auth, results).await;
 
     Ok(())
 }
