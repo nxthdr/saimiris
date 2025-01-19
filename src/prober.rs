@@ -1,25 +1,77 @@
 //! High-level interface for capturing replies.
 use anyhow::Result;
+use caracat::models::{Probe, Reply};
+use caracat::rate_limiter::RateLimiter;
+use caracat::rate_limiter::RateLimitingMethod;
+use caracat::receiver::Receiver;
+use caracat::sender::Sender;
 use hyperloglog::HyperLogLog;
-
+use log::{error, info, trace};
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::sleep;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
-use log::{error, info, trace};
+/// Caracat Probing configuration.
+#[derive(Debug)]
+pub struct CaracatConfig {
+    /// Number of probes to send before calling the rate limiter.
+    pub batch_size: u64,
+    /// Identifier encoded in the probes (random by default).
+    pub instance_id: u16,
+    /// Whether to actually send the probes on the network or not.
+    pub dry_run: bool,
+    /// Do not send probes with ttl < min_ttl.
+    pub min_ttl: Option<u8>,
+    /// Do not send probes with ttl > max_ttl.
+    pub max_ttl: Option<u8>,
+    /// Check that replies match valid probes.
+    pub integrity_check: bool,
+    /// Interface from which to send the packets.
+    pub interface: String,
+    /// Source IPv4 address
+    pub src_ipv4_addr: Option<Ipv4Addr>,
+    /// Source IPv6 address
+    pub src_ipv6_addr: Option<Ipv6Addr>,
+    /// Maximum number of probes to send (unlimited by default).
+    pub max_probes: Option<u64>,
+    /// Number of packets to send per probe.
+    pub packets: u64,
+    /// Probing rate in packets per second.
+    pub probing_rate: u64,
+    /// Method to use to limit the packets rate.
+    pub rate_limiting_method: RateLimitingMethod,
+    /// Time in seconds to wait after sending the probes to stop the receiver.
+    pub receiver_wait_time: Duration,
+}
 
-use crate::handler::Config;
-use caracat::models::{Probe, Reply};
-use caracat::rate_limiter::RateLimiter;
-use caracat::receiver::Receiver;
-use caracat::sender::Sender;
+pub fn load_caracat_config() -> CaracatConfig {
+    CaracatConfig {
+        batch_size: 128,
+        dry_run: false,
+        min_ttl: None,
+        max_ttl: None,
+        integrity_check: true,
+        instance_id: 0,
+        interface: caracat::utilities::get_default_interface(),
+        src_ipv4_addr: None,
+        src_ipv6_addr: None,
+        max_probes: None,
+        packets: 1,
+        probing_rate: 100,
+        rate_limiting_method: caracat::rate_limiter::RateLimitingMethod::Auto,
+        receiver_wait_time: Duration::new(3, 0),
+    }
+}
 
 /// Send probes from an iterator.
 pub fn probe<T: Iterator<Item = Probe>>(
-    config: Config,
+    config: CaracatConfig,
     probes: T,
 ) -> Result<(
     SendStatistics,

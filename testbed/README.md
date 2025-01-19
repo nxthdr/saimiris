@@ -17,7 +17,7 @@ docker compose up -d --force-recreate --renew-anon-volumes
 * Run Osiris (from the root of the repository) with SASL authentication protocol
 
 ```sh
-cargo run -- --out-auth-protocol=SASL 2606:4700:4700::1111/128,1,32,1
+cargo run -- prober --config=testbed/config/osiris/osiris.yml  2606:4700:4700::1111/128,1,32,1
 ```
 
 * Stop the testbed

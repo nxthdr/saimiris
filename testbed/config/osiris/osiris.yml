@@ -1,0 +1,14 @@
+prober:
+  id: 42
+
+kafka:
+  brokers: localhost:9092
+
+  in_topic: osiris-requests
+  in_group_id: osiris-requests-group
+
+  out_topic: osiris-results
+  out_auth_protocol: SASL_PLAINTEXT
+  out_auth_sasl_username: osiris
+  out_auth_sasl_password: osiris
+  out_auth_sasl_mechanism: SCRAM-SHA-512

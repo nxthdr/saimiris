@@ -1,68 +1,13 @@
 use anyhow::Result;
 use caracat::models::Probe;
-use caracat::rate_limiter::RateLimitingMethod;
 use ipnet::IpNet;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use std::net::Ipv4Addr;
-use std::net::Ipv6Addr;
-use std::time::Duration;
 use tokio::task;
 
-use crate::prober::probe;
-use crate::producer::{produce, KafkaAuth};
-
-/// Probing configuration.
-#[derive(Debug)]
-pub struct Config {
-    /// Number of probes to send before calling the rate limiter.
-    pub batch_size: u64,
-    /// Identifier encoded in the probes (random by default).
-    pub instance_id: u16,
-    /// Whether to actually send the probes on the network or not.
-    pub dry_run: bool,
-    /// Do not send probes with ttl < min_ttl.
-    pub min_ttl: Option<u8>,
-    /// Do not send probes with ttl > max_ttl.
-    pub max_ttl: Option<u8>,
-    /// Check that replies match valid probes.
-    pub integrity_check: bool,
-    /// Interface from which to send the packets.
-    pub interface: String,
-    /// Source IPv4 address
-    pub src_ipv4_addr: Option<Ipv4Addr>,
-    /// Source IPv6 address
-    pub src_ipv6_addr: Option<Ipv6Addr>,
-    /// Maximum number of probes to send (unlimited by default).
-    pub max_probes: Option<u64>,
-    /// Number of packets to send per probe.
-    pub packets: u64,
-    /// Probing rate in packets per second.
-    pub probing_rate: u64,
-    /// Method to use to limit the packets rate.
-    pub rate_limiting_method: RateLimitingMethod,
-    /// Time in seconds to wait after sending the probes to stop the receiver.
-    pub receiver_wait_time: Duration,
-}
-
-fn create_config() -> Config {
-    Config {
-        batch_size: 128,
-        dry_run: false,
-        min_ttl: None,
-        max_ttl: None,
-        integrity_check: true,
-        instance_id: 0,
-        interface: caracat::utilities::get_default_interface(),
-        src_ipv4_addr: None,
-        src_ipv6_addr: None,
-        max_probes: None,
-        packets: 1,
-        probing_rate: 100,
-        rate_limiting_method: caracat::rate_limiter::RateLimitingMethod::Auto,
-        receiver_wait_time: Duration::new(3, 0),
-    }
-}
+use crate::config::ProberConfig;
+use crate::prober::{load_caracat_config, probe};
+use crate::producer::{produce, KafkaAuth, SaslAuth};
 
 struct Target {
     prefix: IpNet,
@@ -137,26 +82,34 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
     Ok(probes)
 }
 
-pub async fn handle(
-    prober_id: u16,
-    brokers: &str,
-    _in_topics: &str,
-    _in_group_id: &str,
-    out_topic: &str,
-    out_auth: KafkaAuth,
-    target: &str,
-) -> Result<()> {
+pub async fn handle(config: &ProberConfig, target: &str) -> Result<()> {
+    // Configure Kafka producer authentication
+    let out_auth = match config.out_auth_protocol.as_str() {
+        "PLAINTEXT" => KafkaAuth::PlainText,
+        "SASL_PLAINTEXT" => KafkaAuth::SasalPlainText(SaslAuth {
+            username: config.out_auth_sasl_username.clone(),
+            password: config.out_auth_sasl_password.clone(),
+            mechanism: config.out_auth_sasl_mechanism.clone(),
+        }),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Invalid Kafka producer authentication protocol"
+            ))
+        }
+    };
+
     // Probe Generation
-    let config = create_config();
+    let caracat_config = load_caracat_config();
     let target = decode_payload(target)?;
     let probes_to_send = generate_probes(&target)?;
 
     // Probing
-    let result = task::spawn_blocking(move || probe(config, probes_to_send.into_iter())).await?;
+    let result =
+        task::spawn_blocking(move || probe(caracat_config, probes_to_send.into_iter())).await?;
     let (_, _, results) = result?;
 
     // Produce the results to Kafka topic
-    produce(brokers, out_topic, prober_id, out_auth, results).await;
+    produce(config, out_auth, results).await;
 
     Ok(())
 }

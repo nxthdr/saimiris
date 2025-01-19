@@ -6,6 +6,8 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::config::ProberConfig;
+
 pub struct SaslAuth {
     pub username: String,
     pub password: String,
@@ -13,8 +15,8 @@ pub struct SaslAuth {
 }
 
 pub enum KafkaAuth {
-    SASL(SaslAuth),
-    PLAINTEXT,
+    SasalPlainText(SaslAuth),
+    PlainText,
 }
 
 fn format_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
@@ -59,21 +61,15 @@ fn format_reply(prober_id: u16, reply: &Reply) -> String {
     output.join(",")
 }
 
-pub async fn produce(
-    brokers: &str,
-    topic_name: &str,
-    prober_id: u16,
-    auth: KafkaAuth,
-    results: Arc<Mutex<Vec<Reply>>>,
-) {
+pub async fn produce(config: &ProberConfig, auth: KafkaAuth, results: Arc<Mutex<Vec<Reply>>>) {
     let producer: &FutureProducer = match auth {
-        KafkaAuth::PLAINTEXT => &ClientConfig::new()
-            .set("bootstrap.servers", brokers)
+        KafkaAuth::PlainText => &ClientConfig::new()
+            .set("bootstrap.servers", config.brokers.clone())
             .set("message.timeout.ms", "5000")
             .create()
             .expect("Producer creation error"),
-        KafkaAuth::SASL(scram_auth) => &ClientConfig::new()
-            .set("bootstrap.servers", brokers)
+        KafkaAuth::SasalPlainText(scram_auth) => &ClientConfig::new()
+            .set("bootstrap.servers", config.brokers.clone())
             .set("message.timeout.ms", "5000")
             .set("sasl.username", scram_auth.username)
             .set("sasl.password", scram_auth.password)
@@ -86,8 +82,8 @@ pub async fn produce(
     for result in results.lock().unwrap().iter() {
         let delivery_status = producer
             .send(
-                FutureRecord::to(topic_name)
-                    .payload(&format!("{}", format_reply(prober_id, result)))
+                FutureRecord::to(config.out_topic.as_str())
+                    .payload(&format!("{}", format_reply(config.prober_id, result)))
                     .key(&format!("Key"))
                     .headers(OwnedHeaders::new().insert(Header {
                         key: "header_key",
