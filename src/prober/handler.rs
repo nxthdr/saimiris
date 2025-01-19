@@ -1,13 +1,20 @@
 use anyhow::Result;
 use caracat::models::Probe;
 use ipnet::IpNet;
+use log::info;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use rdkafka::consumer::{CommitMode, Consumer};
+use rdkafka::message::Headers;
+use rdkafka::Message;
 use tokio::task;
 
-use crate::config::ProberConfig;
-use crate::prober::{load_caracat_config, probe};
-use crate::producer::{produce, KafkaAuth, SaslAuth};
+use crate::auth::{KafkaAuth, SaslAuth};
+use crate::config::AppConfig;
+use crate::prober::prober::{load_caracat_config, probe};
+use crate::prober::producer::produce;
+
+use crate::consumer::init_consumer;
 
 struct Target {
     prefix: IpNet,
@@ -82,14 +89,14 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
     Ok(probes)
 }
 
-pub async fn handle(config: &ProberConfig, target: &str) -> Result<()> {
-    // Configure Kafka producer authentication
-    let out_auth = match config.out_auth_protocol.as_str() {
+pub async fn handle(config: &AppConfig) -> Result<()> {
+    // Configure Kafka authentication
+    let out_auth = match config.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
         "SASL_PLAINTEXT" => KafkaAuth::SasalPlainText(SaslAuth {
-            username: config.out_auth_sasl_username.clone(),
-            password: config.out_auth_sasl_password.clone(),
-            mechanism: config.out_auth_sasl_mechanism.clone(),
+            username: config.auth_sasl_username.clone(),
+            password: config.auth_sasl_password.clone(),
+            mechanism: config.auth_sasl_mechanism.clone(),
         }),
         _ => {
             return Err(anyhow::anyhow!(
@@ -98,18 +105,57 @@ pub async fn handle(config: &ProberConfig, target: &str) -> Result<()> {
         }
     };
 
-    // Probe Generation
-    let caracat_config = load_caracat_config();
-    let target = decode_payload(target)?;
-    let probes_to_send = generate_probes(&target)?;
+    let consumer = init_consumer(config, out_auth.clone()).await;
+    loop {
+        match consumer.recv().await {
+            // Err(e) => return Err(anyhow::anyhow!("Kafka error: {}", e)),
+            Err(e) => {
+                info!("Kafka error: {}", e);
+            }
+            Ok(m) => {
+                let target = match m.payload_view::<str>() {
+                    None => "",
+                    Some(Ok(s)) => s,
+                    Some(Err(e)) => {
+                        return Err(anyhow::anyhow!(
+                            "Kafka error: Error while deserializing message payload: {:?}",
+                            e
+                        ))
+                    }
+                };
 
-    // Probing
-    let result =
-        task::spawn_blocking(move || probe(caracat_config, probes_to_send.into_iter())).await?;
-    let (_, _, results) = result?;
+                info!(
+                    "key: '{:?}', payload: '{}', topic: {}, partition: {}, offset: {}, timestamp: {:?}",
+                    m.key(),
+                    target,
+                    m.topic(),
+                    m.partition(),
+                    m.offset(),
+                    m.timestamp()
+                );
+                if let Some(headers) = m.headers() {
+                    for header in headers.iter() {
+                        info!("  Header {:#?}: {:?}", header.key, header.value);
+                    }
+                }
 
-    // Produce the results to Kafka topic
-    produce(config, out_auth, results).await;
+                // Probe Generation
+                let caracat_config: super::prober::CaracatConfig = load_caracat_config();
+                let target = decode_payload(target)?;
+                let probes_to_send = generate_probes(&target)?;
 
-    Ok(())
+                // Probing
+                let result =
+                    task::spawn_blocking(move || probe(caracat_config, probes_to_send.into_iter()))
+                        .await?;
+                let (_, _, results) = result?;
+
+                // Produce the results to Kafka topic
+                produce(config, out_auth.clone(), results).await;
+
+                // Commit the consumed message
+                let _ = consumer.commit_message(&m, CommitMode::Async).unwrap();
+            }
+        };
+    }
 }

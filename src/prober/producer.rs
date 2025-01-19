@@ -6,18 +6,8 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::config::ProberConfig;
-
-pub struct SaslAuth {
-    pub username: String,
-    pub password: String,
-    pub mechanism: String,
-}
-
-pub enum KafkaAuth {
-    SasalPlainText(SaslAuth),
-    PlainText,
-}
+use crate::auth::KafkaAuth;
+use crate::config::AppConfig;
 
 fn format_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
     String::from("[")
@@ -61,7 +51,7 @@ fn format_reply(prober_id: u16, reply: &Reply) -> String {
     output.join(",")
 }
 
-pub async fn produce(config: &ProberConfig, auth: KafkaAuth, results: Arc<Mutex<Vec<Reply>>>) {
+pub async fn produce(config: &AppConfig, auth: KafkaAuth, results: Arc<Mutex<Vec<Reply>>>) {
     let producer: &FutureProducer = match auth {
         KafkaAuth::PlainText => &ClientConfig::new()
             .set("bootstrap.servers", config.brokers.clone())
@@ -84,14 +74,16 @@ pub async fn produce(config: &ProberConfig, auth: KafkaAuth, results: Arc<Mutex<
             .send(
                 FutureRecord::to(config.out_topic.as_str())
                     .payload(&format!("{}", format_reply(config.prober_id, result)))
-                    .key(&format!("Key"))
+                    .key(&format!("Key")) // TODO
                     .headers(OwnedHeaders::new().insert(Header {
+                        // TODO
                         key: "header_key",
                         value: Some("header_value"),
                     })),
                 Duration::from_secs(0),
             )
             .await;
+
         info!("{:?}", delivery_status);
     }
 }

@@ -1,8 +1,8 @@
+mod auth;
+mod client;
 mod config;
 mod consumer;
-mod handler;
 mod prober;
-mod producer;
 
 use anyhow::Result;
 use chrono::Local;
@@ -11,9 +11,7 @@ use clap_verbosity_flag::{InfoLevel, Verbosity};
 use env_logger::Builder;
 use std::io::Write;
 
-// use crate::consumer::consume;
 use crate::config::{load_config, prober_config};
-use crate::handler::handle;
 
 #[derive(Debug, Parser)]
 #[clap(name = "Osiris", version)]
@@ -28,6 +26,12 @@ pub struct App {
 #[command(version, about, long_about = None)]
 enum Command {
     Prober {
+        /// Configuration file
+        #[arg(short, long)]
+        config: String,
+    },
+
+    Client {
         /// Configuration file
         #[arg(short, long)]
         config: String,
@@ -66,11 +70,20 @@ async fn main() -> Result<()> {
     set_logging(&cli.global_opts);
 
     match cli.command {
-        Command::Prober { config, target } => {
+        Command::Prober { config } => {
             let app_config = load_config(&config);
             let prober_config = prober_config(app_config);
 
-            match handle(&prober_config, &target).await {
+            match prober::handle(&prober_config).await {
+                Ok(_) => (),
+                Err(e) => log::error!("Error: {}", e),
+            }
+        }
+        Command::Client { config, target } => {
+            let app_config = load_config(&config);
+            let prober_config = prober_config(app_config);
+
+            match client::handle(&prober_config, &target).await {
                 Ok(_) => (),
                 Err(e) => log::error!("Error: {}", e),
             }
