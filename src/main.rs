@@ -1,7 +1,6 @@
 mod auth;
 mod client;
 mod config;
-mod consumer;
 mod prober;
 
 use anyhow::Result;

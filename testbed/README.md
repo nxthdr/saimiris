@@ -14,7 +14,13 @@ As an example, Redpanda is configured with SASL authentication, and uses the def
 docker compose up -d --force-recreate --renew-anon-volumes
 ```
 
-* Run Osiris (from the root of the repository) with SASL authentication protocol
+* Run Osiris Prober (from the root of the repository)
+
+```sh
+cargo run -- prober --config=testbed/config/osiris/osiris.yml
+```
+
+* Run Osiris Client (from the root of the repository)
 
 ```sh
 cargo run -- prober --config=testbed/config/osiris/osiris.yml  2606:4700:4700::1111/128,1,32,1

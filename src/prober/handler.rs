@@ -14,7 +14,7 @@ use crate::config::AppConfig;
 use crate::prober::prober::{load_caracat_config, probe};
 use crate::prober::producer::produce;
 
-use crate::consumer::init_consumer;
+use crate::prober::consumer::init_consumer;
 
 struct Target {
     prefix: IpNet,
