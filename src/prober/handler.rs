@@ -7,6 +7,7 @@ use rand::thread_rng;
 use rdkafka::consumer::{CommitMode, Consumer};
 use rdkafka::message::Headers;
 use rdkafka::Message;
+use std::net::IpAddr;
 use tokio::task;
 
 use crate::auth::{KafkaAuth, SaslAuth};
@@ -79,7 +80,12 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
                     src_port: 24000,
                     dst_port: 33434,
                     ttl: i,
-                    protocol: caracat::models::L4::ICMPv6,
+                    protocol: {
+                        match dst_addr {
+                            IpAddr::V4(_) => caracat::models::L4::ICMP,
+                            IpAddr::V6(_) => caracat::models::L4::ICMPv6,
+                        }
+                    },
                 });
             }
         }

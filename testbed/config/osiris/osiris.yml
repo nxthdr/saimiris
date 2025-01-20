@@ -1,6 +1,3 @@
-prober:
-  id: 42
-
 kafka:
   brokers: "localhost:9092"
 
@@ -13,3 +10,6 @@ kafka:
   in_group_id: osiris-prober-42
 
   out_topic: osiris-results
+
+prober:
+  id: 42

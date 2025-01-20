@@ -112,7 +112,7 @@ impl ReceiveLoop {
                     Ok(reply) => {
                         trace!("{:?}", reply);
                         statistics.received += 1;
-                        if integrity_check && reply.is_valid(instance_id) {
+                        if !integrity_check || (integrity_check && reply.is_valid(instance_id)) {
                             statistics
                                 .icmp_messages_incl_dest
                                 .insert(&reply.reply_src_addr);
