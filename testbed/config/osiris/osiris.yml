@@ -2,7 +2,7 @@ prober:
   id: 42
 
 kafka:
-  brokers: localhost:9092
+  brokers: "localhost:9092"
 
   auth_protocol: SASL_PLAINTEXT
   auth_sasl_username: osiris
@@ -10,6 +10,6 @@ kafka:
   auth_sasl_mechanism: SCRAM-SHA-512
 
   in_topics: osiris-targets
-  in_group_id: osiris-targets-group
+  in_group_id: osiris-prober-42
 
   out_topic: osiris-results

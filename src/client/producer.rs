@@ -7,15 +7,19 @@ use std::time::Duration;
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
 
+// TODO
+// - check target format
+// - Put as header the IDs of the prober to use
+
 pub async fn produce(config: &AppConfig, auth: KafkaAuth, target: &str) {
     let producer: &FutureProducer = match auth {
         KafkaAuth::PlainText => &ClientConfig::new()
-            .set("bootstrap.servers", config.brokers.clone())
+            .set("bootstrap.servers", config.kafka.brokers.clone())
             .set("message.timeout.ms", "5000")
             .create()
             .expect("Producer creation error"),
         KafkaAuth::SasalPlainText(scram_auth) => &ClientConfig::new()
-            .set("bootstrap.servers", config.brokers.clone())
+            .set("bootstrap.servers", config.kafka.brokers.clone())
             .set("message.timeout.ms", "5000")
             .set("sasl.username", scram_auth.username)
             .set("sasl.password", scram_auth.password)
@@ -25,7 +29,7 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, target: &str) {
             .expect("Producer creation error"),
     };
 
-    let topic = config.in_topics.split(',').collect::<Vec<&str>>()[0];
+    let topic = config.kafka.in_topics.split(',').collect::<Vec<&str>>()[0];
     info!("Producing to topic: {}", topic);
 
     let delivery_status = producer

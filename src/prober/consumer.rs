@@ -6,14 +6,18 @@ use rdkafka::consumer::{Consumer, DefaultConsumerContext};
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
 
+// TODO
+// - Filter out the messages that are not intended for the prober based on the header and prober ID
+// - How to check that there is probers using the same ID? We should probably use a UUID instead.
+
 pub async fn init_consumer(config: &AppConfig, auth: KafkaAuth) -> StreamConsumer {
     let context = DefaultConsumerContext;
-    info!("Brokers: {}", config.brokers);
-    info!("Group ID: {}", config.in_group_id);
+    info!("Brokers: {}", config.kafka.brokers);
+    info!("Group ID: {}", config.kafka.in_group_id);
     let consumer: StreamConsumer<DefaultConsumerContext> = match auth {
         KafkaAuth::PlainText => ClientConfig::new()
-            .set("bootstrap.servers", config.brokers.clone())
-            .set("group.id", config.in_group_id.clone())
+            .set("bootstrap.servers", config.kafka.brokers.clone())
+            .set("group.id", config.kafka.in_group_id.clone())
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "true")
@@ -21,8 +25,8 @@ pub async fn init_consumer(config: &AppConfig, auth: KafkaAuth) -> StreamConsume
             .create_with_context(context.clone())
             .expect("Consumer creation error"),
         KafkaAuth::SasalPlainText(scram_auth) => ClientConfig::new()
-            .set("bootstrap.servers", config.brokers.clone())
-            .set("group.id", config.in_group_id.clone())
+            .set("bootstrap.servers", config.kafka.brokers.clone())
+            .set("group.id", config.kafka.in_group_id.clone())
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
             .set("enable.auto.commit", "true")
@@ -35,7 +39,7 @@ pub async fn init_consumer(config: &AppConfig, auth: KafkaAuth) -> StreamConsume
             .expect("Consumer creation error"),
     };
 
-    let topics: Vec<&str> = config.in_topics.split(',').collect();
+    let topics: Vec<&str> = config.kafka.in_topics.split(',').collect();
     info!("Subscribing to topics: {:?}", topics);
     consumer
         .subscribe(&topics)

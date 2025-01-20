@@ -11,10 +11,9 @@ use tokio::task;
 
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::config::AppConfig;
-use crate::prober::prober::{load_caracat_config, probe};
-use crate::prober::producer::produce;
-
 use crate::prober::consumer::init_consumer;
+use crate::prober::prober::probe;
+use crate::prober::producer::produce;
 
 struct Target {
     prefix: IpNet,
@@ -91,12 +90,12 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
     // Configure Kafka authentication
-    let out_auth = match config.auth_protocol.as_str() {
+    let out_auth = match config.kafka.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
         "SASL_PLAINTEXT" => KafkaAuth::SasalPlainText(SaslAuth {
-            username: config.auth_sasl_username.clone(),
-            password: config.auth_sasl_password.clone(),
-            mechanism: config.auth_sasl_mechanism.clone(),
+            username: config.kafka.auth_sasl_username.clone(),
+            password: config.kafka.auth_sasl_password.clone(),
+            mechanism: config.kafka.auth_sasl_mechanism.clone(),
         }),
         _ => {
             return Err(anyhow::anyhow!(
@@ -140,15 +139,19 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 }
 
                 // Probe Generation
-                let caracat_config: super::prober::CaracatConfig = load_caracat_config();
                 let target = decode_payload(target)?;
                 let probes_to_send = generate_probes(&target)?;
 
                 // Probing
-                let result =
-                    task::spawn_blocking(move || probe(caracat_config, probes_to_send.into_iter()))
-                        .await?;
-                let (_, _, results) = result?;
+                let config_clone = config.clone();
+                let result = task::spawn_blocking(move || {
+                    probe(config_clone.caracat, probes_to_send.into_iter())
+                })
+                .await?;
+                let (rx_stats, tx_stat, results) = result?;
+
+                info!("Packets sent: {:?}", rx_stats.sent);
+                info!("Packets received: {:?}", tx_stat.received);
 
                 // Produce the results to Kafka topic
                 produce(config, out_auth.clone(), results).await;

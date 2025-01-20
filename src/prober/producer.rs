@@ -54,12 +54,12 @@ fn format_reply(prober_id: u16, reply: &Reply) -> String {
 pub async fn produce(config: &AppConfig, auth: KafkaAuth, results: Arc<Mutex<Vec<Reply>>>) {
     let producer: &FutureProducer = match auth {
         KafkaAuth::PlainText => &ClientConfig::new()
-            .set("bootstrap.servers", config.brokers.clone())
+            .set("bootstrap.servers", config.kafka.brokers.clone())
             .set("message.timeout.ms", "5000")
             .create()
             .expect("Producer creation error"),
         KafkaAuth::SasalPlainText(scram_auth) => &ClientConfig::new()
-            .set("bootstrap.servers", config.brokers.clone())
+            .set("bootstrap.servers", config.kafka.brokers.clone())
             .set("message.timeout.ms", "5000")
             .set("sasl.username", scram_auth.username)
             .set("sasl.password", scram_auth.password)
@@ -72,8 +72,11 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, results: Arc<Mutex<Vec
     for result in results.lock().unwrap().iter() {
         let delivery_status = producer
             .send(
-                FutureRecord::to(config.out_topic.as_str())
-                    .payload(&format!("{}", format_reply(config.prober_id, result)))
+                FutureRecord::to(config.kafka.out_topic.as_str())
+                    .payload(&format!(
+                        "{}",
+                        format_reply(config.prober.prober_id, result)
+                    ))
                     .key(&format!("Key")) // TODO
                     .headers(OwnedHeaders::new().insert(Header {
                         // TODO

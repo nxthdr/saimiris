@@ -22,6 +22,6 @@ sleep 3
 /usr/bin/rpk security user create osiris -p 'osiris' --mechanism SCRAM-SHA-512
 /usr/bin/rpk security acl create --allow-principal User:osiris --operation all --cluster -X user=admin -X pass='admin' -X sasl.mechanism=SCRAM-SHA-512
 /usr/bin/rpk security acl create --allow-principal User:osiris --operation all --topic osiris-targets -X user=admin -X pass='admin' -X sasl.mechanism=SCRAM-SHA-512
-/usr/bin/rpk security acl create --allow-principal User:osiris --operation all --group osiris-targets-group -X user=admin -X pass='admin' -X sasl.mechanism=SCRAM-SHA-512
+/usr/bin/rpk security acl create --allow-principal User:osiris --operation all --group osiris-prober- --resource-pattern-type prefixed -X user=admin -X pass='admin' -X sasl.mechanism=SCRAM-SHA-512
 /usr/bin/rpk security acl create --allow-principal User:osiris --operation all --topic osiris-results -X user=admin -X pass='admin' -X sasl.mechanism=SCRAM-SHA-512
 fg %1
