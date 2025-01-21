@@ -16,7 +16,7 @@ RUN apt-get update \
     && apt-get install -y libpcap-dev libsasl2-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/cargo/bin/osiris /app/osiris
+COPY --from=builder /usr/local/cargo/bin/saimiris /app/saimiris
 
-ENTRYPOINT [ "/app/osiris" ]
+ENTRYPOINT [ "/app/saimiris" ]
 CMD [ "--help" ]

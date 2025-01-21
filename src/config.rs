@@ -81,7 +81,7 @@ pub struct AppConfig {
 pub fn load_config(config_path: &str) -> Config {
     Config::builder()
         .add_source(config::File::with_name(config_path))
-        .add_source(config::Environment::with_prefix("OSIRIS"))
+        .add_source(config::Environment::with_prefix("SAIMIRIS"))
         .build()
         .unwrap()
 }
@@ -126,22 +126,22 @@ pub fn prober_config(config: Config) -> AppConfig {
                 .unwrap_or("PLAINTEXT".to_string()),
             auth_sasl_username: config
                 .get_string("kafka.auth_sasl_username")
-                .unwrap_or("osiris".to_string()),
+                .unwrap_or("saimiris".to_string()),
             auth_sasl_password: config
                 .get_string("kafka.auth_sasl_password")
-                .unwrap_or("osiris".to_string()),
+                .unwrap_or("saimiris".to_string()),
             auth_sasl_mechanism: config
                 .get_string("kafka.auth_sasl_mechanism")
                 .unwrap_or("SCRAM-SHA-512".to_string()),
             in_topics: config
                 .get_string("kafka.in_topics")
-                .unwrap_or("osiris".to_string()),
+                .unwrap_or("saimiris".to_string()),
             in_group_id: config
                 .get_string("kafka.in_group_id")
-                .unwrap_or("osiris".to_string()),
+                .unwrap_or("saimiris".to_string()),
             out_topic: config
                 .get_string("kafka.out_topic")
-                .unwrap_or("osiris-results".to_string()),
+                .unwrap_or("saimiris-results".to_string()),
         },
 
         // Prober configuration

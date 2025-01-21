@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS osiris;
-CREATE TABLE osiris.from_kafka
+CREATE DATABASE IF NOT EXISTS saimiris;
+CREATE TABLE saimiris.from_kafka
 (
     timestamp DateTime64,
     prober_id UInt16,
@@ -26,11 +26,11 @@ CREATE TABLE osiris.from_kafka
 ENGINE = Kafka()
 SETTINGS
     kafka_broker_list = '10.0.0.100:9093',
-    kafka_topic_list = 'osiris-results',
-    kafka_group_name = 'clickhouse-osiris-group',
+    kafka_topic_list = 'saimiris-results',
+    kafka_group_name = 'clickhouse-saimiris-group',
     kafka_format = 'CSV';
 
-CREATE TABLE osiris.results
+CREATE TABLE saimiris.results
 (
     timestamp DateTime64,
     prober_id UInt16,
@@ -64,5 +64,5 @@ ORDER BY (
     probe_ttl
 );
 
-CREATE MATERIALIZED VIEW osiris.from_kafka_mv TO osiris.results
-AS SELECT * FROM osiris.from_kafka;
+CREATE MATERIALIZED VIEW saimiris.from_kafka_mv TO saimiris.results
+AS SELECT * FROM saimiris.from_kafka;

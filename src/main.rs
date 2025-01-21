@@ -13,7 +13,7 @@ use std::io::Write;
 use crate::config::{load_config, prober_config};
 
 #[derive(Debug, Parser)]
-#[clap(name = "Osiris", version)]
+#[clap(name = "Saimiris", version)]
 pub struct App {
     #[clap(flatten)]
     global_opts: GlobalOpts,
@@ -59,7 +59,7 @@ fn set_logging(cli: &GlobalOpts) {
                 record.args()
             )
         })
-        .filter_module("osiris", cli.verbose.log_level_filter())
+        .filter_module("saimiris", cli.verbose.log_level_filter())
         .init();
 }
 

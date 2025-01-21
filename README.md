@@ -1,7 +1,7 @@
-# Osiris
+# Saimiris
 
 > [!WARNING]
-> Osiris is currently in early-stage development.
+> Currently in early-stage development.
 
 ## Structure
 
