@@ -2,12 +2,14 @@ mod auth;
 mod client;
 mod config;
 mod prober;
+mod utils;
 
 use anyhow::Result;
 use chrono::Local;
 use clap::{Args, Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use env_logger::Builder;
+use log::error;
 use std::io::Write;
 
 use crate::config::{load_config, prober_config};
@@ -35,8 +37,12 @@ enum Command {
         #[arg(short, long)]
         config: String,
 
-        /// Target (eg., 2606:4700:4700::1111/128,1,32,1)
+        /// Probers IDs (comma separated)
         #[arg(index = 1)]
+        probers: String,
+
+        /// Target (eg., 2606:4700:4700::1111/128,1,32,1)
+        #[arg(index = 2)]
         target: String,
     },
 }
@@ -75,16 +81,20 @@ async fn main() -> Result<()> {
 
             match prober::handle(&prober_config).await {
                 Ok(_) => (),
-                Err(e) => log::error!("Error: {}", e),
+                Err(e) => error!("Error: {}", e),
             }
         }
-        Command::Client { config, target } => {
+        Command::Client {
+            config,
+            probers,
+            target,
+        } => {
             let app_config = load_config(&config);
             let prober_config = prober_config(app_config);
 
-            match client::handle(&prober_config, &target).await {
+            match client::handle(&prober_config, &probers, &target).await {
                 Ok(_) => (),
-                Err(e) => log::error!("Error: {}", e),
+                Err(e) => error!("Error: {}", e),
             }
         }
     }

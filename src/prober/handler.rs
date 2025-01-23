@@ -15,6 +15,7 @@ use crate::config::AppConfig;
 use crate::prober::consumer::init_consumer;
 use crate::prober::prober::probe;
 use crate::prober::producer::produce;
+use crate::utils::test_id;
 
 struct Target {
     prefix: IpNet,
@@ -95,6 +96,13 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
 }
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
+    // Test input ID
+    if !test_id(Some(config.prober.prober_id.clone()), None, None) {
+        return Err(anyhow::anyhow!("Invalid prober ID"));
+    }
+
+    info!("Prober ID: {}", config.prober.prober_id);
+
     // Configure Kafka authentication
     let out_auth = match config.kafka.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
@@ -142,6 +150,22 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                     for header in headers.iter() {
                         info!("  Header {:#?}: {:?}", header.key, header.value);
                     }
+                }
+
+                // Filter out the messages that are not intended for the prober
+                // by looking at the prober ID in the headers
+                let mut is_intended = false;
+                if let Some(headers) = m.headers() {
+                    for header in headers.iter() {
+                        if header.key == &config.prober.prober_id {
+                            is_intended = true;
+                            break;
+                        }
+                    }
+                }
+                if !is_intended {
+                    info!("Target not intended for this prober");
+                    continue;
                 }
 
                 // Probe Generation

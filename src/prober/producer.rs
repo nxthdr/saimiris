@@ -24,7 +24,7 @@ fn format_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
         + "]"
 }
 
-fn format_reply(prober_id: u16, reply: &Reply) -> String {
+fn format_reply(prober_id: String, reply: &Reply) -> String {
     let mut output = vec![];
     output.push(format!("{}", reply.capture_timestamp.as_millis()));
     output.push(format!("{}", prober_id));
@@ -75,7 +75,7 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, results: Arc<Mutex<Vec
                 FutureRecord::to(config.kafka.out_topic.as_str())
                     .payload(&format!(
                         "{}",
-                        format_reply(config.prober.prober_id, result)
+                        format_reply(config.prober.prober_id.clone(), result)
                     ))
                     .key(&format!("Key")) // TODO
                     .headers(OwnedHeaders::new().insert(Header {

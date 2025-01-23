@@ -1,10 +1,11 @@
+use caracat::rate_limiter::RateLimitingMethod;
+use config::Config;
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
 
-use caracat::rate_limiter::RateLimitingMethod;
-use config::Config;
+use crate::utils::generate_id;
 
 #[derive(Debug, Clone)]
 pub struct CaracatConfig {
@@ -68,7 +69,7 @@ pub struct KafkaConfig {
 #[derive(Debug, Clone)]
 pub struct ProberConfig {
     /// Prober identifier.
-    pub prober_id: u16,
+    pub prober_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -146,7 +147,9 @@ pub fn prober_config(config: Config) -> AppConfig {
 
         // Prober configuration
         prober: ProberConfig {
-            prober_id: config.get_int("prober.prober_id").unwrap_or(0) as u16,
+            prober_id: config
+                .get_string("prober.id")
+                .unwrap_or(generate_id(None, None)),
         },
     }
 }

@@ -786,6 +786,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanoid"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ffa00dec017b5b1a8b7cf5e2c008bfda1aa7e0697ac1508b491fdf2622fb4d8"
+dependencies = [
+ "rand",
+]
+
+[[package]]
 name = "no-std-net"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -866,27 +875,6 @@ checksum = "5ffd2b0a5634335b135d5728d84c5e0fd726954b87111f7506a61c502280d982"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "saimiris"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "caracat",
- "chrono",
- "clap",
- "clap-verbosity-flag",
- "config",
- "csv",
- "env_logger",
- "hyperloglog",
- "ipnet",
- "log",
- "pcap",
- "rand",
- "rdkafka",
- "tokio",
 ]
 
 [[package]]
@@ -1258,6 +1246,28 @@ name = "ryu"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
+
+[[package]]
+name = "saimiris"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "caracat",
+ "chrono",
+ "clap",
+ "clap-verbosity-flag",
+ "config",
+ "csv",
+ "env_logger",
+ "hyperloglog",
+ "ipnet",
+ "log",
+ "nanoid",
+ "pcap",
+ "rand",
+ "rdkafka",
+ "tokio",
+]
 
 [[package]]
 name = "sasl2-sys"

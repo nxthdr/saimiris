@@ -4,7 +4,7 @@ use crate::auth::{KafkaAuth, SaslAuth};
 use crate::client::producer::produce;
 use crate::config::AppConfig;
 
-pub async fn handle(config: &AppConfig, target: &str) -> Result<()> {
+pub async fn handle(config: &AppConfig, probers: &str, target: &str) -> Result<()> {
     // Configure Kafka authentication
     let auth = match config.kafka.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
@@ -20,7 +20,9 @@ pub async fn handle(config: &AppConfig, target: &str) -> Result<()> {
         }
     };
 
-    produce(config, auth, target).await;
+    let probers = probers.split(',').collect::<Vec<&str>>();
+
+    produce(config, auth, probers, target).await;
 
     Ok(())
 }

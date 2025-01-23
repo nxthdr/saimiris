@@ -11,7 +11,7 @@ use crate::config::AppConfig;
 // - check target format
 // - Put as header the IDs of the prober to use
 
-pub async fn produce(config: &AppConfig, auth: KafkaAuth, target: &str) {
+pub async fn produce(config: &AppConfig, auth: KafkaAuth, probers: Vec<&str>, target: &str) {
     let producer: &FutureProducer = match auth {
         KafkaAuth::PlainText => &ClientConfig::new()
             .set("bootstrap.servers", config.kafka.brokers.clone())
@@ -32,16 +32,21 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, target: &str) {
     let topic = config.kafka.in_topics.split(',').collect::<Vec<&str>>()[0];
     info!("Producing to topic: {}", topic);
 
+    // Construct headers
+    let mut headers = OwnedHeaders::new();
+    for prober in probers {
+        headers = headers.insert(Header {
+            key: prober,
+            value: Some(prober),
+        });
+    }
+
     let delivery_status = producer
         .send(
             FutureRecord::to(topic)
                 .payload(target)
-                .key(&format!("Key")) // TODO
-                .headers(OwnedHeaders::new().insert(Header {
-                    // TODO
-                    key: "header_key",
-                    value: Some("header_value"),
-                })),
+                .key(&format!("")) // TODO Client ID
+                .headers(headers),
             Duration::from_secs(0),
         )
         .await;
