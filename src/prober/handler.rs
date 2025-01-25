@@ -7,7 +7,6 @@ use rand::thread_rng;
 use rdkafka::consumer::{CommitMode, Consumer};
 use rdkafka::message::Headers;
 use rdkafka::Message;
-use std::net::IpAddr;
 use tokio::task;
 
 use crate::auth::{KafkaAuth, SaslAuth};
@@ -15,24 +14,8 @@ use crate::config::AppConfig;
 use crate::prober::consumer::init_consumer;
 use crate::prober::prober::probe;
 use crate::prober::producer::produce;
+use crate::target::{decode_target, Target};
 use crate::utils::test_id;
-
-struct Target {
-    prefix: IpNet,
-    min_ttl: u8,
-    max_ttl: u8,
-    n_flows: u64,
-}
-
-fn decode_payload(payload: &str) -> Result<Target> {
-    let parts: Vec<&str> = payload.split(',').collect();
-    Ok(Target {
-        prefix: parts[0].parse()?,
-        min_ttl: parts[1].parse()?,
-        max_ttl: parts[2].parse()?,
-        n_flows: parts[3].parse()?,
-    })
-}
 
 fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
     // TODO: We should pass an iterator instead of a vector.
@@ -81,12 +64,7 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
                     src_port: 24000,
                     dst_port: 33434,
                     ttl: i,
-                    protocol: {
-                        match dst_addr {
-                            IpAddr::V4(_) => caracat::models::L4::ICMP,
-                            IpAddr::V6(_) => caracat::models::L4::ICMPv6,
-                        }
-                    },
+                    protocol: target.protocol.clone(),
                 });
             }
         }
@@ -169,7 +147,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 }
 
                 // Probe Generation
-                let target = decode_payload(target)?;
+                let target = decode_target(target)?;
                 let probes_to_send = generate_probes(&target)?;
 
                 // Probing

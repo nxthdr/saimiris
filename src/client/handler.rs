@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::client::producer::produce;
 use crate::config::AppConfig;
+use crate::target::decode_target;
 
 pub async fn handle(config: &AppConfig, probers: &str, target: &str) -> Result<()> {
     // Configure Kafka authentication
@@ -21,6 +22,7 @@ pub async fn handle(config: &AppConfig, probers: &str, target: &str) -> Result<(
     };
 
     let probers = probers.split(',').collect::<Vec<&str>>();
+    decode_target(target)?;
 
     produce(config, auth, probers, target).await;
 

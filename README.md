@@ -27,8 +27,19 @@ The client is the agent that sends the measurements to the prober. It sends a me
 
 
 ```sh
-samiris client --config=saimiris.yml <prober-id> <target>
+samiris client --config=saimiris.yml <comma-separated-prober-id> <target>
 ```
 
+A target is a network to probe. It must follow this format:
+
+```
+network,protocol,min_ttl,max_ttl,n_flows
+```
+
+where:
+- the network is a IPv4/IPv6 prefix.
+- the prococol can be `icmp` or `udp`.
+- the min_ttl and max_ttl are the minimum and maximum TTL values to probe.
+- the n_flows is the number of flows to use.
 
 

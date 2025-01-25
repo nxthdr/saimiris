@@ -2,6 +2,7 @@ mod auth;
 mod client;
 mod config;
 mod prober;
+mod target;
 mod utils;
 
 use anyhow::Result;
@@ -41,7 +42,7 @@ enum Command {
         #[arg(index = 1)]
         probers: String,
 
-        /// Target (eg., 2606:4700:4700::1111/128,1,32,1)
+        /// Target (eg., 2606:4700:4700::1111/128,icmp,1,32,1)
         #[arg(index = 2)]
         target: String,
     },

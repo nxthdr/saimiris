@@ -23,7 +23,7 @@ cargo run -- prober --config=testbed/config/saimiris/saimiris.yml
 * Run Saimiris Client (from the root of the repository)
 
 ```sh
-cargo run -- client --config=testbed/config/saimiris/saimiris.yml wbmwwp9vna 2606:4700:4700::1111/128,1,32,1
+cargo run -- client --config=testbed/config/saimiris/saimiris.yml wbmwwp9vna 2606:4700:4700::1111/128,icmp,1,32,1
 ```
 
 * Stop the testbed
