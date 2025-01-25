@@ -143,6 +143,9 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 }
                 if !is_intended {
                     info!("Target not intended for this prober");
+
+                    // TODO: handle errors
+                    consumer.commit_message(&m, CommitMode::Async).unwrap();
                     continue;
                 }
 
@@ -165,7 +168,8 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 produce(config, out_auth.clone(), results).await;
 
                 // Commit the consumed message
-                let _ = consumer.commit_message(&m, CommitMode::Async).unwrap();
+                // TODO: handle errors
+                consumer.commit_message(&m, CommitMode::Async).unwrap();
             }
         };
     }
