@@ -74,7 +74,7 @@ pub struct AppConfig {
     pub kafka: KafkaConfig,
 }
 
-pub fn load_config(config_path: &str) -> Config {
+fn load_config(config_path: &str) -> Config {
     Config::builder()
         .add_source(config::File::with_name(config_path))
         .add_source(config::Environment::with_prefix("SAIMIRIS"))
@@ -82,7 +82,8 @@ pub fn load_config(config_path: &str) -> Config {
         .unwrap()
 }
 
-pub fn agent_config(config: Config) -> AppConfig {
+pub fn app_config(config_path: &str) -> AppConfig {
+    let config = load_config(config_path);
     AppConfig {
         // Caracat configuration
         caracat: CaracatConfig {

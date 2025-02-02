@@ -1,7 +1,7 @@
 use anyhow::Result;
 use caracat::models::Probe;
 use ipnet::IpNet;
-use log::info;
+use log::{info, trace};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use rdkafka::consumer::{CommitMode, Consumer};
@@ -76,6 +76,9 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
 }
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
+    trace!("Agent handler");
+    trace!("{:?}", config);
+
     // Test input ID
     if !test_id(Some(config.agent.agent_id.clone()), None, None) {
         return Err(anyhow::anyhow!("Invalid agent ID"));

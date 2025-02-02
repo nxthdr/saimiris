@@ -13,7 +13,7 @@ use env_logger::Builder;
 use log::error;
 use std::io::Write;
 
-use crate::config::{agent_config, load_config};
+use crate::config::app_config;
 
 #[derive(Debug, Parser)]
 #[clap(name = "Saimiris", version)]
@@ -77,10 +77,8 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Agent { config } => {
-            let app_config = load_config(&config);
-            let agent_config = agent_config(app_config);
-
-            match agent::handle(&agent_config).await {
+            let app_config = app_config(&config);
+            match agent::handle(&app_config).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
             }
@@ -90,10 +88,8 @@ async fn main() -> Result<()> {
             agents,
             target,
         } => {
-            let app_config = load_config(&config);
-            let agent_config = agent_config(app_config);
-
-            match client::handle(&agent_config, &agents, &target).await {
+            let app_config = app_config(&config);
+            match client::handle(&app_config, &agents, &target).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
             }
