@@ -1,15 +1,11 @@
 kafka:
   brokers: "localhost:9092"
-
-  auth_protocol: SASL_PLAINTEXT
-  auth_sasl_username: saimiris
-  auth_sasl_password: saimiris
-  auth_sasl_mechanism: SCRAM-SHA-512
+  auth_protocol: PLAINTEXT
 
   in_topics: saimiris-targets
-  in_group_id: saimiris-prober-42
+  in_group_id: saimiris-agent-wbmwwp9vna
 
   out_topic: saimiris-results
 
-prober:
+agent:
   id: wbmwwp9vna

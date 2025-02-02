@@ -1,7 +1,7 @@
+mod agent;
 mod auth;
 mod client;
 mod config;
-mod prober;
 mod target;
 mod utils;
 
@@ -13,7 +13,7 @@ use env_logger::Builder;
 use log::error;
 use std::io::Write;
 
-use crate::config::{load_config, prober_config};
+use crate::config::{agent_config, load_config};
 
 #[derive(Debug, Parser)]
 #[clap(name = "Saimiris", version)]
@@ -27,7 +27,7 @@ pub struct App {
 #[derive(Debug, Subcommand)]
 #[command(version, about, long_about = None)]
 enum Command {
-    Prober {
+    Agent {
         /// Configuration file
         #[arg(short, long)]
         config: String,
@@ -38,9 +38,9 @@ enum Command {
         #[arg(short, long)]
         config: String,
 
-        /// Probers IDs (comma separated)
+        /// Agent IDs (comma separated)
         #[arg(index = 1)]
-        probers: String,
+        agents: String,
 
         /// Target (eg., 2606:4700:4700::1111/128,icmp,1,32,1)
         #[arg(index = 2)]
@@ -76,24 +76,24 @@ async fn main() -> Result<()> {
     set_logging(&cli.global_opts);
 
     match cli.command {
-        Command::Prober { config } => {
+        Command::Agent { config } => {
             let app_config = load_config(&config);
-            let prober_config = prober_config(app_config);
+            let agent_config = agent_config(app_config);
 
-            match prober::handle(&prober_config).await {
+            match agent::handle(&agent_config).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
             }
         }
         Command::Client {
             config,
-            probers,
+            agents,
             target,
         } => {
             let app_config = load_config(&config);
-            let prober_config = prober_config(app_config);
+            let agent_config = agent_config(app_config);
 
-            match client::handle(&prober_config, &probers, &target).await {
+            match client::handle(&agent_config, &agents, &target).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
             }

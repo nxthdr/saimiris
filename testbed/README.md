@@ -14,10 +14,10 @@ As an example, Redpanda is configured with SASL authentication, and uses the def
 docker compose up -d --force-recreate --renew-anon-volumes
 ```
 
-* Run Saimiris Prober (from the root of the repository)
+* Run Saimiris Agent (from the root of the repository)
 
 ```sh
-cargo run -- prober --config=testbed/config/saimiris/saimiris.yml
+cargo run -- agent --config=testbed/config/saimiris/saimiris.yml
 ```
 
 * Run Saimiris Client (from the root of the repository)

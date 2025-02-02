@@ -7,13 +7,15 @@ use rand::thread_rng;
 use rdkafka::consumer::{CommitMode, Consumer};
 use rdkafka::message::Headers;
 use rdkafka::Message;
+use std::sync::mpsc::channel;
 use tokio::task;
 
+use crate::agent::consumer::init_consumer;
+use crate::agent::producer::produce;
+use crate::agent::receiver::ReceiveLoop;
+use crate::agent::sender::send;
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::config::AppConfig;
-use crate::prober::consumer::init_consumer;
-use crate::prober::prober::probe;
-use crate::prober::producer::produce;
 use crate::target::{decode_target, Target};
 use crate::utils::test_id;
 
@@ -75,14 +77,14 @@ fn generate_probes(target: &Target) -> Result<Vec<Probe>> {
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
     // Test input ID
-    if !test_id(Some(config.prober.prober_id.clone()), None, None) {
-        return Err(anyhow::anyhow!("Invalid prober ID"));
+    if !test_id(Some(config.agent.agent_id.clone()), None, None) {
+        return Err(anyhow::anyhow!("Invalid agent ID"));
     }
 
-    info!("Prober ID: {}", config.prober.prober_id);
+    info!("Agent ID: {}", config.agent.agent_id);
 
     // Configure Kafka authentication
-    let out_auth = match config.kafka.auth_protocol.as_str() {
+    let kafka_auth = match config.kafka.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
         "SASL_PLAINTEXT" => KafkaAuth::SasalPlainText(SaslAuth {
             username: config.kafka.auth_sasl_username.clone(),
@@ -96,7 +98,21 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         }
     };
 
-    let consumer = init_consumer(config, out_auth.clone()).await;
+    // MPSC channel to communicate between reveiver task and Kafka producer task
+    let (tx, rx) = channel();
+
+    // Start the receiver thread
+    info!("Starting receiver");
+    ReceiveLoop::new(tx, config.caracat.clone());
+
+    // Start the Kafka producer task
+    let config_task = config.clone();
+    let kafka_auth_task = kafka_auth.clone();
+    task::spawn(async move {
+        produce(&config_task, kafka_auth_task, rx).await;
+    });
+
+    let consumer = init_consumer(config, kafka_auth.clone()).await;
     loop {
         match consumer.recv().await {
             // Err(e) => return Err(anyhow::anyhow!("Kafka error: {}", e)),
@@ -130,19 +146,19 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                     }
                 }
 
-                // Filter out the messages that are not intended for the prober
-                // by looking at the prober ID in the headers
+                // Filter out the messages that are not intended for the agent
+                // by looking at the agent ID in the headers
                 let mut is_intended = false;
                 if let Some(headers) = m.headers() {
                     for header in headers.iter() {
-                        if header.key == &config.prober.prober_id {
+                        if header.key == &config.agent.agent_id {
                             is_intended = true;
                             break;
                         }
                     }
                 }
                 if !is_intended {
-                    info!("Target not intended for this prober");
+                    info!("Target not intended for this agent");
 
                     // TODO: handle errors
                     consumer.commit_message(&m, CommitMode::Async).unwrap();
@@ -155,17 +171,11 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
                 // Probing
                 let config_clone = config.clone();
-                let result = task::spawn_blocking(move || {
-                    probe(config_clone.caracat, probes_to_send.into_iter())
+                let send_statistics = task::spawn_blocking(move || {
+                    send(config_clone.caracat, probes_to_send.into_iter())
                 })
-                .await?;
-                let (rx_stats, tx_stat, results) = result?;
-
-                info!("Packets sent: {:?}", rx_stats.sent);
-                info!("Packets received: {:?}", tx_stat.received);
-
-                // Produce the results to Kafka topic
-                produce(config, out_auth.clone(), results).await;
+                .await??;
+                info!("{}", send_statistics);
 
                 // Commit the consumed message
                 // TODO: handle errors

@@ -3,7 +3,7 @@ use log::info;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
 use crate::auth::KafkaAuth;
@@ -24,10 +24,10 @@ fn format_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
         + "]"
 }
 
-fn format_reply(prober_id: String, reply: &Reply) -> String {
+fn format_reply(agent_id: String, reply: &Reply) -> String {
     let mut output = vec![];
     output.push(format!("{}", reply.capture_timestamp.as_millis()));
-    output.push(format!("{}", prober_id));
+    output.push(format!("{}", agent_id));
     output.push(format!("{}", reply.reply_src_addr));
     output.push(format!("{}", reply.reply_dst_addr));
     output.push(format!("{}", reply.reply_id));
@@ -51,7 +51,7 @@ fn format_reply(prober_id: String, reply: &Reply) -> String {
     output.join(",")
 }
 
-pub async fn produce(config: &AppConfig, auth: KafkaAuth, results: Arc<Mutex<Vec<Reply>>>) {
+pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
     let producer: &FutureProducer = match auth {
         KafkaAuth::PlainText => &ClientConfig::new()
             .set("bootstrap.servers", config.kafka.brokers.clone())
@@ -69,13 +69,15 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, results: Arc<Mutex<Vec
             .expect("Producer creation error"),
     };
 
-    for result in results.lock().unwrap().iter() {
+    // TODO: send batch of replies
+    loop {
+        let result = rx.recv().unwrap();
         let delivery_status = producer
             .send(
                 FutureRecord::to(config.kafka.out_topic.as_str())
                     .payload(&format!(
                         "{}",
-                        format_reply(config.prober.prober_id.clone(), result)
+                        format_reply(config.agent.agent_id.clone(), &result)
                     ))
                     .key(&format!("Key")) // TODO
                     .headers(OwnedHeaders::new().insert(Header {

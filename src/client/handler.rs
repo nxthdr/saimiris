@@ -5,7 +5,7 @@ use crate::client::producer::produce;
 use crate::config::AppConfig;
 use crate::target::decode_target;
 
-pub async fn handle(config: &AppConfig, probers: &str, target: &str) -> Result<()> {
+pub async fn handle(config: &AppConfig, agents: &str, target: &str) -> Result<()> {
     // Configure Kafka authentication
     let auth = match config.kafka.auth_protocol.as_str() {
         "PLAINTEXT" => KafkaAuth::PlainText,
@@ -21,10 +21,10 @@ pub async fn handle(config: &AppConfig, probers: &str, target: &str) -> Result<(
         }
     };
 
-    let probers = probers.split(',').collect::<Vec<&str>>();
+    let agents = agents.split(',').collect::<Vec<&str>>();
     decode_target(target)?;
 
-    produce(config, auth, probers, target).await;
+    produce(config, auth, agents, target).await;
 
     Ok(())
 }

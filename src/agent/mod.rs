@@ -1,7 +1,8 @@
 mod consumer;
 mod handler;
-mod prober;
 mod producer;
+mod receiver;
+mod sender;
 
 // Re-exports
 pub use handler::handle;

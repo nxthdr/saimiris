@@ -9,9 +9,8 @@ use crate::config::AppConfig;
 
 // TODO
 // - check target format
-// - Put as header the IDs of the prober to use
 
-pub async fn produce(config: &AppConfig, auth: KafkaAuth, probers: Vec<&str>, target: &str) {
+pub async fn produce(config: &AppConfig, auth: KafkaAuth, agents: Vec<&str>, target: &str) {
     let producer: &FutureProducer = match auth {
         KafkaAuth::PlainText => &ClientConfig::new()
             .set("bootstrap.servers", config.kafka.brokers.clone())
@@ -34,10 +33,10 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, probers: Vec<&str>, ta
 
     // Construct headers
     let mut headers = OwnedHeaders::new();
-    for prober in probers {
+    for agent in agents {
         headers = headers.insert(Header {
-            key: prober,
-            value: Some(prober),
+            key: agent,
+            value: Some(agent),
         });
     }
 

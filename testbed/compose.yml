@@ -2,10 +2,9 @@ services:
   redpanda:
     image: redpandadata/redpanda:latest
     volumes:
-    - ./config/redpanda/entrypoint.sh:/entrypoint.sh:ro
-    - ./config/redpanda/redpanda.yml:/etc/redpanda/redpanda.yaml:ro
+      - ./config/redpanda/redpanda.yml:/etc/redpanda/redpanda.yaml:ro
     ports:
-    - "9092:9092"
+      - "9092:9092"
     networks:
       testbed:
         ipv4_address: 10.0.0.100
@@ -13,7 +12,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     volumes:
-    - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
     networks:
       testbed:
         ipv4_address: 10.0.0.200

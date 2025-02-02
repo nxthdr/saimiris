@@ -9,7 +9,7 @@ redpanda:
         - address: 0.0.0.0
           name: external
           port: 9092
-          authentication_method: sasl
+          authentication_method: none
         - address: 0.0.0.0
           name: internal
           port: 9093

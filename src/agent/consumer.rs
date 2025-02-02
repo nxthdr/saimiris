@@ -6,10 +6,6 @@ use rdkafka::consumer::{Consumer, DefaultConsumerContext};
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
 
-// TODO
-// - Filter out the messages that are not intended for the prober based on the header and prober ID
-// - How to check that there is probers using the same ID? We should probably use a UUID instead.
-
 pub async fn init_consumer(config: &AppConfig, auth: KafkaAuth) -> StreamConsumer {
     let context = DefaultConsumerContext;
     info!("Brokers: {}", config.kafka.brokers);

@@ -1,11 +1,14 @@
 use caracat::rate_limiter::RateLimitingMethod;
 use config::Config;
-use std::{
-    net::{Ipv4Addr, Ipv6Addr},
-    time::Duration,
-};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use crate::utils::generate_id;
+
+#[derive(Debug, Clone)]
+pub struct AgentConfig {
+    /// Agent identifier.
+    pub agent_id: String,
+}
 
 #[derive(Debug, Clone)]
 pub struct CaracatConfig {
@@ -35,8 +38,6 @@ pub struct CaracatConfig {
     pub probing_rate: u64,
     /// Method to use to limit the packets rate.
     pub rate_limiting_method: RateLimitingMethod,
-    /// Time in seconds to wait after sending the probes to stop the receiver.
-    pub receiver_wait_time: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -67,16 +68,10 @@ pub struct KafkaConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProberConfig {
-    /// Prober identifier.
-    pub prober_id: String,
-}
-
-#[derive(Debug, Clone)]
 pub struct AppConfig {
+    pub agent: AgentConfig,
     pub caracat: CaracatConfig,
     pub kafka: KafkaConfig,
-    pub prober: ProberConfig,
 }
 
 pub fn load_config(config_path: &str) -> Config {
@@ -87,7 +82,7 @@ pub fn load_config(config_path: &str) -> Config {
         .unwrap()
 }
 
-pub fn prober_config(config: Config) -> AppConfig {
+pub fn agent_config(config: Config) -> AppConfig {
     AppConfig {
         // Caracat configuration
         caracat: CaracatConfig {
@@ -112,9 +107,6 @@ pub fn prober_config(config: Config) -> AppConfig {
             packets: config.get_int("caracat.packets").unwrap_or(1) as u64,
             probing_rate: config.get_int("caracat.probing_rate").unwrap_or(100) as u64,
             rate_limiting_method: caracat::rate_limiter::RateLimitingMethod::Auto, // TODO
-            receiver_wait_time: Duration::from_secs(
-                config.get_int("caracat.receiver_wait_time").unwrap_or(3) as u64,
-            ),
         },
 
         // Kafka configuration
@@ -145,10 +137,10 @@ pub fn prober_config(config: Config) -> AppConfig {
                 .unwrap_or("saimiris-results".to_string()),
         },
 
-        // Prober configuration
-        prober: ProberConfig {
-            prober_id: config
-                .get_string("prober.id")
+        // Agent configuration
+        agent: AgentConfig {
+            agent_id: config
+                .get_string("agent.id")
                 .unwrap_or(generate_id(None, None)),
         },
     }
