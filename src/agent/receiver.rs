@@ -73,9 +73,7 @@ impl ReceiveLoop {
                         // e.g. ReceiverError::CaptureError(...)
                         match error.downcast_ref::<pcap::Error>() {
                             Some(error) => match error {
-                                pcap::Error::TimeoutExpired => {
-                                    trace!("pcap timeout_expired");
-                                }
+                                pcap::Error::TimeoutExpired => {}
                                 _ => error!("{:?}", error),
                             },
                             None => {

@@ -174,11 +174,13 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
                 // Probing
                 let config_clone = config.clone();
-                let send_statistics = task::spawn_blocking(move || {
+                let (send_statistics, rate_limiter_statistics) = task::spawn_blocking(move || {
                     send(config_clone.caracat, probes_to_send.into_iter())
                 })
                 .await??;
+
                 info!("{}", send_statistics);
+                info!("{}", rate_limiter_statistics);
 
                 // Commit the consumed message
                 // TODO: handle errors

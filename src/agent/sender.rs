@@ -11,7 +11,10 @@ use std::sync::{Arc, Mutex};
 use crate::config::CaracatConfig;
 
 /// Send probes from an iterator.
-pub fn send<T: Iterator<Item = Probe>>(config: CaracatConfig, probes: T) -> Result<SendStatistics> {
+pub fn send<T: Iterator<Item = Probe>>(
+    config: CaracatConfig,
+    probes: T,
+) -> Result<(SendStatistics, RateLimiterStatistics)> {
     info!("{:?}", config);
 
     let rate_limiter = RateLimiter::new(
@@ -38,8 +41,11 @@ pub fn send<T: Iterator<Item = Probe>>(config: CaracatConfig, probes: T) -> Resu
     );
 
     sender.probe(probes)?;
+
     let sender_statistics = *sender.statistics().lock().unwrap();
-    Ok(sender_statistics)
+    let rate_limiter_statistics = sender.rate_limiter_statistics();
+
+    Ok((sender_statistics, rate_limiter_statistics))
 }
 
 pub struct SendLoop {
@@ -134,6 +140,14 @@ impl SendLoop {
     pub fn statistics(&self) -> &Arc<Mutex<SendStatistics>> {
         &self.statistics
     }
+
+    pub fn rate_limiter_statistics(&self) -> RateLimiterStatistics {
+        let rate_limiter_statistics = self.rate_limiter.statistics().lock().unwrap();
+        RateLimiterStatistics {
+            average_utilization: rate_limiter_statistics.average_utilization(),
+            average_rate: rate_limiter_statistics.average_rate(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -149,5 +163,20 @@ impl Display for SendStatistics {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "probes_read={} packets_sent={} packets_failed={} filtered_low_ttl={} filtered_high_ttl={}",
                self.read, self.sent, self.failed, self.filtered_low_ttl, self.filtered_high_ttl)
+    }
+}
+
+pub struct RateLimiterStatistics {
+    pub average_utilization: f64,
+    pub average_rate: f64,
+}
+
+impl Display for RateLimiterStatistics {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "average_rate={} average_utilization={}",
+            self.average_rate, self.average_utilization
+        )
     }
 }
