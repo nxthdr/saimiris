@@ -65,6 +65,9 @@ pub struct KafkaConfig {
 
     /// Kafka producer topic
     pub out_topic: String,
+
+    /// Enable Kafka producer
+    pub out_enable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +139,7 @@ pub fn app_config(config_path: &str) -> AppConfig {
             out_topic: config
                 .get_string("kafka.out_topic")
                 .unwrap_or("saimiris-results".to_string()),
+            out_enable: config.get_bool("kafka.out_enable").unwrap_or(true),
         },
 
         // Agent configuration

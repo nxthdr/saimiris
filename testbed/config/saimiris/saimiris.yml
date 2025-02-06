@@ -5,6 +5,7 @@ kafka:
   in_topics: saimiris-targets
   in_group_id: saimiris-agent-wbmwwp9vna
 
+  out_enable: true
   out_topic: saimiris-results
 
 agent:

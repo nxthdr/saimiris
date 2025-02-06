@@ -108,7 +108,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     info!("Starting receiver");
     ReceiveLoop::new(tx, config.caracat.clone());
 
-    // Start the Kafka producer task
+    // Start the Kafka producer task if enabled
     let config_task = config.clone();
     let kafka_auth_task = kafka_auth.clone();
     task::spawn(async move {

@@ -1,5 +1,5 @@
 use caracat::models::{MPLSLabel, Reply};
-use log::info;
+use log::{info, warn};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -52,6 +52,13 @@ fn format_reply(agent_id: String, reply: &Reply) -> String {
 }
 
 pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
+    if config.kafka.out_enable == false {
+        warn!("Kafka producer is disabled");
+        loop {
+            rx.recv().unwrap();
+        }
+    }
+
     let producer: &FutureProducer = match auth {
         KafkaAuth::PlainText => &ClientConfig::new()
             .set("bootstrap.servers", config.kafka.brokers.clone())
@@ -69,7 +76,6 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             .expect("Producer creation error"),
     };
 
-    // TODO: send batch of replies
     loop {
         let result = rx.recv().unwrap();
         let delivery_status = producer
