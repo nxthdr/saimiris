@@ -2,10 +2,10 @@ use anyhow::Result;
 use log::trace;
 
 use crate::auth::{KafkaAuth, SaslAuth};
+use crate::client::generate::generate_probes;
 use crate::client::producer::produce;
+use crate::client::target::decode_target;
 use crate::config::AppConfig;
-use crate::probe::generate_probes;
-use crate::target::decode_target;
 
 pub async fn handle(config: &AppConfig, agents: &str, target: &str) -> Result<()> {
     trace!("Client handler");
