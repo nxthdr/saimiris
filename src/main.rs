@@ -7,11 +7,11 @@ mod utils;
 
 use anyhow::Result;
 use chrono::Local;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use env_logger::Builder;
 use log::error;
-use std::io::Write;
+use std::io::{stdin, IsTerminal, Write};
 
 use crate::config::app_config;
 
@@ -41,10 +41,6 @@ enum Command {
         /// Agent IDs (comma separated)
         #[arg(index = 1)]
         agents: String,
-
-        /// Target (eg., 2606:4700:4700::1111/128,icmp,1,32,1)
-        #[arg(index = 2)]
-        target: String,
     },
 }
 
@@ -83,13 +79,14 @@ async fn main() -> Result<()> {
                 Err(e) => error!("Error: {}", e),
             }
         }
-        Command::Client {
-            config,
-            agents,
-            target,
-        } => {
+        Command::Client { config, agents } => {
+            if stdin().is_terminal() {
+                App::command().print_help().unwrap();
+                ::std::process::exit(2);
+            }
+
             let app_config = app_config(&config);
-            match client::handle(&app_config, &agents, &target).await {
+            match client::handle(&app_config, &agents).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
             }

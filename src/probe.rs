@@ -20,7 +20,7 @@ pub fn decode_protocol(protocol: &str) -> Result<caracat::models::L4> {
 
 pub fn encode_probe(probe: &Probe) -> String {
     format!(
-        "{},{},{},{},{}\n",
+        "{},{},{},{},{}",
         probe.dst_addr,
         probe.src_port,
         probe.dst_port,
@@ -29,23 +29,17 @@ pub fn encode_probe(probe: &Probe) -> String {
     )
 }
 
-pub fn decode_probes(probes: &str) -> Result<Vec<Probe>> {
-    let mut decoded_probes = vec![];
-
-    for probe in probes.lines() {
-        let fields: Vec<&str> = probe.split(',').collect();
-        if fields.len() != 5 {
-            return Err(anyhow::anyhow!("Invalid probe format: {}", probe));
-        }
-
-        decoded_probes.push(Probe {
-            dst_addr: fields[0].parse()?,
-            src_port: fields[1].parse()?,
-            dst_port: fields[2].parse()?,
-            ttl: fields[3].parse()?,
-            protocol: decode_protocol(fields[4])?,
-        });
+pub fn decode_probe(probe: &str) -> Result<Probe> {
+    let fields: Vec<&str> = probe.split(',').collect();
+    if fields.len() != 5 {
+        return Err(anyhow::anyhow!("Invalid probe format: {}", probe));
     }
 
-    Ok(decoded_probes)
+    Ok(Probe {
+        dst_addr: fields[0].parse()?,
+        src_port: fields[1].parse()?,
+        dst_port: fields[2].parse()?,
+        ttl: fields[3].parse()?,
+        protocol: decode_protocol(fields[4])?,
+    })
 }

@@ -1,13 +1,13 @@
 use anyhow::Result;
 use log::trace;
+use std::io::{stdin, BufRead};
 
 use crate::auth::{KafkaAuth, SaslAuth};
-use crate::client::generate::generate_probes;
 use crate::client::producer::produce;
-use crate::client::target::decode_target;
 use crate::config::AppConfig;
+use crate::probe::decode_probe;
 
-pub async fn handle(config: &AppConfig, agents: &str, target: &str) -> Result<()> {
+pub async fn handle(config: &AppConfig, agents: &str) -> Result<()> {
     trace!("Client handler");
     trace!("{:?}", config);
 
@@ -26,12 +26,15 @@ pub async fn handle(config: &AppConfig, agents: &str, target: &str) -> Result<()
         }
     };
 
+    // Get probes from stdin
+    let mut probes = Vec::new();
+    for line in stdin().lock().lines() {
+        let probe = line?;
+        probes.push(decode_probe(&probe)?);
+    }
+
     // Split agents
     let agents = agents.split(',').collect::<Vec<&str>>();
-
-    // Probe Generation
-    let target = decode_target(target)?;
-    let probes = generate_probes(&target)?;
 
     produce(config, auth, agents, probes).await;
 

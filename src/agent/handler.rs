@@ -13,7 +13,7 @@ use crate::agent::receiver::ReceiveLoop;
 use crate::agent::sender::send;
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::config::AppConfig;
-use crate::probe::decode_probes;
+use crate::probe::decode_probe;
 use crate::utils::test_id;
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
@@ -101,7 +101,10 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 }
 
                 // Decode probes
-                let probes_to_send = decode_probes(probes)?;
+                let probes_to_send = probes
+                    .split('\n')
+                    .map(|probe| decode_probe(probe))
+                    .collect::<Result<Vec<_>>>()?;
 
                 // Probing
                 let config_clone = config.clone();
