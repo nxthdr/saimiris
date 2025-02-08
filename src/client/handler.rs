@@ -4,6 +4,7 @@ use log::trace;
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::client::producer::produce;
 use crate::config::AppConfig;
+use crate::probe::generate_probes;
 use crate::target::decode_target;
 
 pub async fn handle(config: &AppConfig, agents: &str, target: &str) -> Result<()> {
@@ -25,10 +26,14 @@ pub async fn handle(config: &AppConfig, agents: &str, target: &str) -> Result<()
         }
     };
 
+    // Split agents
     let agents = agents.split(',').collect::<Vec<&str>>();
-    decode_target(target)?;
 
-    produce(config, auth, agents, target).await;
+    // Probe Generation
+    let target = decode_target(target)?;
+    let probes = generate_probes(&target)?;
+
+    produce(config, auth, agents, probes).await;
 
     Ok(())
 }

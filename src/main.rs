@@ -2,6 +2,7 @@ mod agent;
 mod auth;
 mod client;
 mod config;
+mod probe;
 mod target;
 mod utils;
 
