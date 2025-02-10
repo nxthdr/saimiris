@@ -1,5 +1,5 @@
 use caracat::models::{MPLSLabel, Reply};
-use log::{info, warn};
+use log::{debug, info, warn};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -9,7 +9,7 @@ use std::time::Duration;
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
 
-fn format_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
+fn encode_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
     String::from("[")
         + &mpls_labels
             .iter()
@@ -24,7 +24,7 @@ fn format_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
         + "]"
 }
 
-fn format_reply(agent_id: String, reply: &Reply) -> String {
+fn encode_reply(agent_id: String, reply: &Reply) -> String {
     let mut output = vec![];
     output.push(format!("{}", reply.capture_timestamp.as_millis()));
     output.push(format!("{}", agent_id));
@@ -36,7 +36,7 @@ fn format_reply(agent_id: String, reply: &Reply) -> String {
     output.push(format!("{}", reply.reply_protocol));
     output.push(format!("{}", reply.reply_icmp_type));
     output.push(format!("{}", reply.reply_icmp_code));
-    output.push(format!("{}", format_mpls_labels(&reply.reply_mpls_labels)));
+    output.push(format!("{}", encode_mpls_labels(&reply.reply_mpls_labels)));
     output.push(format!("{}", reply.probe_src_addr));
     output.push(format!("{}", reply.probe_dst_addr));
     output.push(format!("{}", reply.probe_id));
@@ -76,15 +76,54 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             .expect("Producer creation error"),
     };
 
+    // Send to Kafka
+    let mut additional_reply = None;
     loop {
-        let result = rx.recv().unwrap();
+        let start_time = std::time::Instant::now();
+        let mut message = String::new();
+        let mut n_replies = 0;
+
+        // Send the additional reply first
+        if let Some(reply) = additional_reply {
+            let reply_str = encode_reply(config.agent.id.clone(), &reply);
+            message.push_str(&reply_str);
+            message.push_str("\n");
+            n_replies += 1;
+            additional_reply = None;
+        }
+
+        loop {
+            let reply = rx.recv().unwrap();
+            let reply_str = encode_reply(config.agent.id.clone(), &reply);
+
+            if message.len() + reply_str.len() + 1 > config.kafka.message_max_bytes {
+                additional_reply = Some(reply);
+                break;
+            }
+
+            message.push_str(&reply_str);
+            message.push_str("\n");
+            n_replies += 1;
+
+            let now = std::time::Instant::now();
+            if now.duration_since(start_time)
+                > std::time::Duration::from_millis(config.kafka.out_max_wait_time)
+            {
+                // TODO: Config the duration
+                break;
+            }
+        }
+
+        // Remove the last newline character
+        message.pop();
+
+        debug!("{}", message);
+        info!("Sending {} replies to Kafka", n_replies);
+
         let delivery_status = producer
             .send(
                 FutureRecord::to(config.kafka.out_topic.as_str())
-                    .payload(&format!(
-                        "{}",
-                        format_reply(config.agent.agent_id.clone(), &result)
-                    ))
+                    .payload(&format!("{}", message))
                     .key(&format!("Key")) // TODO
                     .headers(OwnedHeaders::new().insert(Header {
                         // TODO

@@ -21,11 +21,11 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     trace!("{:?}", config);
 
     // Test input ID
-    if !test_id(Some(config.agent.agent_id.clone()), None, None) {
+    if !test_id(Some(config.agent.id.clone()), None, None) {
         return Err(anyhow::anyhow!("Invalid agent ID"));
     }
 
-    info!("Agent ID: {}", config.agent.agent_id);
+    info!("Agent ID: {}", config.agent.id);
 
     // Configure Kafka authentication
     let kafka_auth = match config.kafka.auth_protocol.as_str() {
@@ -86,7 +86,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 let mut is_intended = false;
                 if let Some(headers) = m.headers() {
                     for header in headers.iter() {
-                        if header.key == &config.agent.agent_id {
+                        if header.key == &config.agent.id {
                             is_intended = true;
                             break;
                         }

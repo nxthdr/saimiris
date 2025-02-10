@@ -4,7 +4,7 @@ use caracat::models::Probe;
 pub fn encode_protocol(protocol: caracat::models::L4) -> String {
     match protocol {
         caracat::models::L4::ICMP => "icmp".to_string(),
-        caracat::models::L4::ICMPv6 => "icmpv6".to_string(),
+        caracat::models::L4::ICMPv6 => "icmp6".to_string(),
         caracat::models::L4::UDP => "udp".to_string(),
     }
 }
@@ -12,7 +12,7 @@ pub fn encode_protocol(protocol: caracat::models::L4) -> String {
 pub fn decode_protocol(protocol: &str) -> Result<caracat::models::L4> {
     match protocol {
         "icmp" => Ok(caracat::models::L4::ICMP),
-        "icmpv6" => Ok(caracat::models::L4::ICMPv6),
+        "icmp6" => Ok(caracat::models::L4::ICMPv6),
         "udp" => Ok(caracat::models::L4::UDP),
         _ => Err(anyhow::anyhow!("Invalid protocol: {}", protocol)),
     }
