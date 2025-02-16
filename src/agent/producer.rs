@@ -1,7 +1,7 @@
 use caracat::models::{MPLSLabel, Reply};
 use log::{debug, info, warn};
 use rdkafka::config::ClientConfig;
-use rdkafka::message::{Header, OwnedHeaders};
+use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -77,59 +77,63 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
     };
 
     // Send to Kafka
-    let mut additional_reply = None;
+    let mut additional_message = None;
     loop {
         let start_time = std::time::Instant::now();
-        let mut message = String::new();
-        let mut n_replies = 0;
+        let mut final_message = String::new();
+        let mut n_messages = 0;
 
         // Send the additional reply first
-        if let Some(reply) = additional_reply {
-            let reply_str = encode_reply(config.agent.id.clone(), &reply);
-            message.push_str(&reply_str);
-            message.push_str("\n");
-            n_replies += 1;
-            additional_reply = None;
+        if let Some(message) = additional_message {
+            let message_str = encode_reply(config.agent.id.clone(), &message);
+            final_message.push_str(&message_str);
+            final_message.push_str("\n");
+            n_messages += 1;
+            additional_message = None;
         }
 
         loop {
-            let reply = rx.recv().unwrap();
-            let reply_str = encode_reply(config.agent.id.clone(), &reply);
-
-            if message.len() + reply_str.len() + 1 > config.kafka.message_max_bytes {
-                additional_reply = Some(reply);
-                break;
-            }
-
-            message.push_str(&reply_str);
-            message.push_str("\n");
-            n_replies += 1;
-
-            let now = std::time::Instant::now();
-            if now.duration_since(start_time)
-                > std::time::Duration::from_millis(config.kafka.out_max_wait_time)
+            if std::time::Instant::now().duration_since(start_time)
+                > std::time::Duration::from_millis(config.kafka.out_batch_wait_time)
             {
-                // TODO: Config the duration
                 break;
             }
+
+            let message = rx.try_recv();
+            if message.is_err() {
+                tokio::time::sleep(Duration::from_millis(config.kafka.out_batch_wait_interval))
+                    .await;
+                continue;
+            }
+
+            let message = message.unwrap();
+            let message_str = encode_reply(config.agent.id.clone(), &message);
+            if final_message.len() + message_str.len() + 1 > config.kafka.message_max_bytes {
+                additional_message = Some(message);
+                break;
+            }
+
+            final_message.push_str(&message_str);
+            final_message.push_str("\n");
+            n_messages += 1;
+        }
+
+        if final_message.is_empty() {
+            continue;
         }
 
         // Remove the last newline character
-        message.pop();
+        final_message.pop();
 
-        debug!("{}", message);
-        info!("Sending {} replies to Kafka", n_replies);
+        debug!("{}", final_message);
+        info!("Sending {} replies to Kafka", n_messages);
 
         let delivery_status = producer
             .send(
                 FutureRecord::to(config.kafka.out_topic.as_str())
-                    .payload(&format!("{}", message))
-                    .key(&format!("Key")) // TODO
-                    .headers(OwnedHeaders::new().insert(Header {
-                        // TODO
-                        key: "header_key",
-                        value: Some("header_value"),
-                    })),
+                    .payload(&format!("{}", final_message))
+                    .key(&format!("")) // TODO
+                    .headers(OwnedHeaders::new()), // TODO
                 Duration::from_secs(0),
             )
             .await;

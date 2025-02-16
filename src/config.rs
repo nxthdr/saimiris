@@ -108,9 +108,13 @@ pub struct KafkaConfig {
     /// Default: saimiris-results
     pub out_topic: String,
 
-    /// Kafka producer max wait time
+    /// Kafka producer batch wait time
     /// Default: 1000
-    pub out_max_wait_time: u64,
+    pub out_batch_wait_time: u64,
+
+    /// Kafka producer batch wait interval
+    /// Default: 100
+    pub out_batch_wait_interval: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -192,7 +196,10 @@ pub fn app_config(config_path: &str) -> AppConfig {
             out_topic: config
                 .get_string("kafka.out_topic")
                 .unwrap_or("saimiris-results".to_string()),
-            out_max_wait_time: config.get_int("kafka.out_max_wait_time").unwrap_or(1000) as u64,
+            out_batch_wait_time: config.get_int("kafka.out_batch_wait_time").unwrap_or(1000) as u64,
+            out_batch_wait_interval: config
+                .get_int("kafka.out_batch_wait_interval")
+                .unwrap_or(100) as u64,
         },
     }
 }
