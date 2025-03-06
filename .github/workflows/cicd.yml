@@ -1,17 +1,24 @@
-name: Publish Docker images
-on:
-  workflow_run:
-    workflows: [ "Rust" ]
-    branches: [ "main" ]
-    types:
-      - completed
+name: CICD
+
+on: [ "push", "pull_request" ]
 
 env:
+  CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: sudo apt install libpcap-dev libsasl2-dev libssl-dev
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
+
+  docker:
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +31,7 @@ jobs:
       id-token: write
 
     runs-on: ${{ matrix.os }}
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: [ tests ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -51,6 +58,7 @@ jobs:
         with:
           context: .
           push: true
+          provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
