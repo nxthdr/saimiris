@@ -12,6 +12,7 @@ use clap_verbosity_flag::{InfoLevel, Verbosity};
 use env_logger::Builder;
 use log::error;
 use std::io::{stdin, IsTerminal, Write};
+use std::path::PathBuf;
 
 use crate::config::app_config;
 
@@ -41,6 +42,10 @@ enum Command {
         /// Agent IDs (comma separated)
         #[arg(index = 1)]
         agents: String,
+
+        /// Probes file (read stdin if not provided)
+        #[arg(short, long)]
+        probes_file: Option<PathBuf>,
     },
 }
 
@@ -79,14 +84,18 @@ async fn main() -> Result<()> {
                 Err(e) => error!("Error: {}", e),
             }
         }
-        Command::Client { config, agents } => {
+        Command::Client {
+            config,
+            agents,
+            probes_file,
+        } => {
             if stdin().is_terminal() {
                 App::command().print_help().unwrap();
                 ::std::process::exit(2);
             }
 
             let app_config = app_config(&config);
-            match client::handle(&app_config, &agents).await {
+            match client::handle(&app_config, &agents, probes_file).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
             }
