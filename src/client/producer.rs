@@ -91,7 +91,6 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, agents: Vec<&str>, pro
             Ok(status) => info!("{:?}", status),
             Err((error, _)) => {
                 error!("{}", error.to_string());
-                error!("{}", config.kafka.message_max_bytes);
             }
         }
     }
