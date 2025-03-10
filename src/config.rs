@@ -184,8 +184,7 @@ pub fn app_config(config_path: &str) -> AppConfig {
             auth_sasl_mechanism: config
                 .get_string("kafka.auth_sasl_mechanism")
                 .unwrap_or("SCRAM-SHA-512".to_string()),
-            message_max_bytes: config.get_int("kafka.message_max_bytes").unwrap_or(1048576)
-                as usize,
+            message_max_bytes: config.get_int("kafka.message_max_bytes").unwrap_or(990000) as usize,
             in_topics: config
                 .get_string("kafka.in_topics")
                 .unwrap_or("saimiris-targets".to_string()),
