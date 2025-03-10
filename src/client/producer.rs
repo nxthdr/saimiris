@@ -1,5 +1,5 @@
 use caracat::models::Probe;
-use log::{debug, info};
+use log::{debug, error, info};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -15,7 +15,7 @@ fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<String> 
     for probe in probes {
         // Format probe
         let probe_str = encode_probe(&probe);
-        // Max message size is 1048576 bytes
+        // Max message size is 1048576 bytes (including headers)
         if current_message.len() + probe_str.len() + 1 > message_max_bytes {
             // Remove the last newline character
             current_message.pop();
@@ -87,6 +87,12 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, agents: Vec<&str>, pro
             )
             .await;
 
-        info!("{:?}", delivery_status);
+        match delivery_status {
+            Ok(status) => info!("{:?}", status),
+            Err((error, _)) => {
+                error!("{}", error.to_string());
+                error!("{}", config.kafka.message_max_bytes);
+            }
+        }
     }
 }

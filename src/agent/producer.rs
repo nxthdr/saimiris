@@ -1,5 +1,5 @@
 use caracat::models::{MPLSLabel, Reply};
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
@@ -108,6 +108,8 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
 
             let message = message.unwrap();
             let message_str = encode_reply(config.agent.id.clone(), &message);
+
+            // Max message size is 1048576 bytes (including headers)
             if final_message.len() + message_str.len() + 1 > config.kafka.message_max_bytes {
                 additional_message = Some(message);
                 break;
@@ -138,6 +140,11 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             )
             .await;
 
-        info!("{:?}", delivery_status);
+        match delivery_status {
+            Ok(status) => info!("{:?}", status),
+            Err((error, _)) => {
+                error!("{}", error.to_string());
+            }
+        }
     }
 }
