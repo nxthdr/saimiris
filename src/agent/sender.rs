@@ -1,151 +1,128 @@
-use anyhow::Result;
 use caracat::models::Probe;
 use caracat::rate_limiter::RateLimiter;
-use caracat::sender::Sender;
-
+use caracat::sender::Sender as CaracatSender;
 use log::{error, info, trace};
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::thread::JoinHandle;
 
 use crate::config::CaracatConfig;
 
-/// Send probes from an iterator.
-pub fn send<T: Iterator<Item = Probe>>(
-    config: CaracatConfig,
-    probes: T,
-) -> Result<(SendStatistics, RateLimiterStatistics)> {
-    info!("{:?}", config);
+#[allow(dead_code)]
+pub struct SendLoop {
+    handle: JoinHandle<()>,
+    stopped: Arc<Mutex<bool>>,
+    statistics: Arc<Mutex<SendStatistics>>,
+}
 
-    let rate_limiter = RateLimiter::new(
-        config.probing_rate,
-        config.batch_size,
-        config.rate_limiting_method,
-    );
+impl SendLoop {
+    pub fn new(rx: Receiver<Vec<Probe>>, feedback: Sender<bool>, config: CaracatConfig) -> Self {
+        let mut rate_limiter = RateLimiter::new(
+            config.probing_rate,
+            config.batch_size,
+            config.rate_limiting_method,
+        );
 
-    let mut sender = SendLoop::new(
-        config.batch_size,
-        config.instance_id,
-        config.min_ttl,
-        config.max_ttl,
-        config.max_probes,
-        config.packets,
-        rate_limiter,
-        Sender::new(
+        let stopped = Arc::new(Mutex::new(false));
+        let stopped_thr = stopped.clone();
+
+        let statistics = Arc::new(Mutex::new(SendStatistics::default()));
+        let statistics_thr = statistics.clone();
+
+        let mut caracat_sender = CaracatSender::new(
             &config.interface,
             config.src_ipv4_addr,
             config.src_ipv6_addr,
             config.instance_id,
             config.dry_run,
-        )?,
-    );
+        )
+        .unwrap();
 
-    sender.probe(probes)?;
+        let handle = thread::spawn(move || {
+            loop {
+                let mut statistics = statistics_thr.lock().unwrap();
 
-    let sender_statistics = *sender.statistics().lock().unwrap();
-    let rate_limiter_statistics = sender.rate_limiter_statistics();
-
-    Ok((sender_statistics, rate_limiter_statistics))
-}
-
-pub struct SendLoop {
-    batch_size: u64,
-    instance_id: u16,
-    min_ttl: Option<u8>,
-    max_ttl: Option<u8>,
-    max_probes: Option<u64>,
-    packets: u64,
-    rate_limiter: RateLimiter,
-    sender: Sender,
-    statistics: Arc<Mutex<SendStatistics>>,
-}
-
-impl SendLoop {
-    pub fn new(
-        batch_size: u64,
-        instance_id: u16,
-        min_ttl: Option<u8>,
-        max_ttl: Option<u8>,
-        max_probes: Option<u64>,
-        packets: u64,
-        rate_limiter: RateLimiter,
-        sender: Sender,
-    ) -> Self {
-        let statistics = Arc::new(Mutex::new(SendStatistics::default()));
-        SendLoop {
-            batch_size,
-            instance_id,
-            min_ttl,
-            max_ttl,
-            max_probes,
-            packets,
-            rate_limiter,
-            sender,
-            statistics,
-        }
-    }
-
-    pub fn probe<T: Iterator<Item = Probe>>(&mut self, probes: T) -> Result<()> {
-        for probe in probes {
-            let mut statistics = self.statistics.lock().unwrap();
-            statistics.read += 1;
-
-            if let Some(ttl) = self.min_ttl {
-                if probe.ttl < ttl {
-                    trace!("{:?} filter=ttl_too_low", probe);
-                    statistics.filtered_low_ttl += 1;
-                    continue;
-                }
-            }
-
-            if let Some(ttl) = self.max_ttl {
-                if probe.ttl > ttl {
-                    trace!("{:?} filter=ttl_too_high", probe);
-                    statistics.filtered_high_ttl += 1;
-                    continue;
-                }
-            }
-
-            for i in 0..self.packets {
-                trace!(
-                    "{:?} id={} packet={}",
-                    probe,
-                    probe.checksum(self.instance_id),
-                    i + 1
-                );
-                match self.sender.send(&probe) {
-                    Ok(_) => statistics.sent += 1,
+                let probes = match rx.recv() {
+                    Ok(probes) => probes,
                     Err(error) => {
-                        statistics.failed += 1;
                         error!("{}", error);
+                        break;
+                    }
+                };
+
+                for probe in probes {
+                    trace!("{:?}", probe);
+                    statistics.read += 1;
+
+                    if let Some(ttl) = config.min_ttl {
+                        if probe.ttl < ttl {
+                            trace!("{:?} filter=ttl_too_low", probe);
+                            statistics.filtered_low_ttl += 1;
+                            continue;
+                        }
+                    }
+
+                    if let Some(ttl) = config.max_ttl {
+                        if probe.ttl > ttl {
+                            trace!("{:?} filter=ttl_too_high", probe);
+                            statistics.filtered_high_ttl += 1;
+                            continue;
+                        }
+                    }
+
+                    for i in 0..config.packets {
+                        trace!(
+                            "{:?} id={} packet={}",
+                            probe,
+                            probe.checksum(config.instance_id),
+                            i + 1
+                        );
+                        match caracat_sender.send(&probe) {
+                            Ok(_) => statistics.sent += 1,
+                            Err(error) => {
+                                statistics.failed += 1;
+                                error!("{}", error);
+                            }
+                        }
+                        // Rate limit every `batch_size` packets sent.
+                        if (statistics.sent + statistics.failed) % config.batch_size == 0 {
+                            rate_limiter.wait();
+                        }
+                    }
+
+                    if let Some(max_probes) = config.max_probes {
+                        if statistics.sent >= max_probes {
+                            info!("max_probes reached, exiting...");
+                            break;
+                        }
                     }
                 }
-                // Rate limit every `batch_size` packets sent.
-                if (statistics.sent + statistics.failed) % self.batch_size == 0 {
-                    self.rate_limiter.wait();
-                }
-            }
 
-            if let Some(max_probes) = self.max_probes {
-                if statistics.sent >= max_probes {
-                    info!("max_probes reached, exiting...");
+                let rate_limiter_statistics = rate_limiter.statistics().lock().unwrap();
+                let rate_limiter_statistics_display = RateLimiterStatistics {
+                    average_utilization: rate_limiter_statistics.average_utilization(),
+                    average_rate: rate_limiter_statistics.average_rate(),
+                };
+
+                info!("{}", statistics);
+                info!("{}", rate_limiter_statistics_display);
+
+                feedback.send(true).unwrap();
+
+                if *stopped_thr.lock().unwrap() {
+                    trace!("Stopping caracat sending loop");
                     break;
                 }
             }
-        }
+        });
 
-        Ok(())
-    }
-
-    pub fn statistics(&self) -> &Arc<Mutex<SendStatistics>> {
-        &self.statistics
-    }
-
-    pub fn rate_limiter_statistics(&self) -> RateLimiterStatistics {
-        let rate_limiter_statistics = self.rate_limiter.statistics().lock().unwrap();
-        RateLimiterStatistics {
-            average_utilization: rate_limiter_statistics.average_utilization(),
-            average_rate: rate_limiter_statistics.average_rate(),
+        SendLoop {
+            handle,
+            stopped,
+            statistics,
         }
     }
 }

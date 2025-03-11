@@ -14,7 +14,6 @@ use crate::config::CaracatConfig;
 #[allow(dead_code)]
 pub struct ReceiveLoop {
     handle: JoinHandle<()>,
-    tx: Sender<Reply>,
     stopped: Arc<Mutex<bool>>,
     statistics: Arc<Mutex<ReceiveStatistics>>,
 }
@@ -28,6 +27,7 @@ impl ReceiveLoop {
         // `utilities::exit_process_on_panic` but we might find a better way in the future.
         let stopped = Arc::new(Mutex::new(false));
         let stopped_thr = stopped.clone();
+
         let statistics = Arc::new(Mutex::new(ReceiveStatistics::default()));
         let statistics_thr = statistics.clone();
 
@@ -93,7 +93,6 @@ impl ReceiveLoop {
 
         ReceiveLoop {
             handle,
-            tx,
             stopped,
             statistics,
         }

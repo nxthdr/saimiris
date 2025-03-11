@@ -1,6 +1,5 @@
 use anyhow::Result;
-use log::{info, trace};
-
+use log::{debug, info, trace};
 use rdkafka::consumer::{CommitMode, Consumer};
 use rdkafka::message::Headers;
 use rdkafka::Message;
@@ -10,7 +9,7 @@ use tokio::task;
 use crate::agent::consumer::init_consumer;
 use crate::agent::producer::produce;
 use crate::agent::receiver::ReceiveLoop;
-use crate::agent::sender::send;
+use crate::agent::sender::SendLoop;
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::config::AppConfig;
 use crate::probe::decode_probe;
@@ -42,21 +41,28 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         }
     };
 
-    // MPSC channel to communicate between reveiver task and Kafka producer task
-    let (tx, rx) = channel();
+    // MPSC channel to communicate between Kafka consumer task and caracat sender task
+    let (tx_sender_probe, rx_sender_probe) = channel();
+    let (tx_sender_feedback, rx_sender_feedback) = channel();
 
-    // Start the receiver thread
-    info!("Starting receiver");
-    ReceiveLoop::new(tx, config.caracat.clone());
+    // MPSC channel to communicate between caracat receiver task and Kafka producer task
+    let (tx_reply, rx_reply) = channel();
+
+    debug!("Starting caracat sender");
+    SendLoop::new(rx_sender_probe, tx_sender_feedback, config.caracat.clone());
+
+    debug!("Starting caracat receiver");
+    ReceiveLoop::new(tx_reply, config.caracat.clone());
 
     // Start the Kafka producer task if enabled
     let config_task = config.clone();
     let kafka_auth_task = kafka_auth.clone();
     task::spawn(async move {
-        produce(&config_task, kafka_auth_task, rx).await;
+        produce(&config_task, kafka_auth_task, rx_reply).await;
     });
 
     let consumer = init_consumer(config, kafka_auth.clone()).await;
+    let mut first_loop = true;
     loop {
         match consumer.recv().await {
             // Err(e) => return Err(anyhow::anyhow!("Kafka error: {}", e)),
@@ -75,9 +81,10 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                     }
                 };
 
+                debug!("Received message");
                 if let Some(headers) = m.headers() {
                     for header in headers.iter() {
-                        info!("  Header {:#?}: {:?}", header.key, header.value);
+                        debug!("Header {:#?}: {:?}", header.key, header.value);
                     }
                 }
 
@@ -106,15 +113,24 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                     .map(|probe| decode_probe(probe))
                     .collect::<Result<Vec<_>>>()?;
 
-                // Probing
-                let config_clone = config.clone();
-                let (send_statistics, rate_limiter_statistics) = task::spawn_blocking(move || {
-                    send(config_clone.caracat, probes_to_send.into_iter())
-                })
-                .await??;
+                // Send to the channel
+                tx_sender_probe.send(probes_to_send).unwrap();
 
-                info!("{}", send_statistics);
-                info!("{}", rate_limiter_statistics);
+                if first_loop {
+                    first_loop = false;
+                } else {
+                    // Wait for the sender to finish the measurement
+                    loop {
+                        let sender_feedback = match rx_sender_feedback.try_recv() {
+                            Ok(feedback) => feedback,
+                            Err(_) => false,
+                        };
+
+                        if sender_feedback {
+                            break;
+                        }
+                    }
+                }
 
                 // Commit the consumed message
                 // TODO: handle errors
