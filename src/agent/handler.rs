@@ -65,7 +65,6 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     let mut first_loop = true;
     loop {
         match consumer.recv().await {
-            // Err(e) => return Err(anyhow::anyhow!("Kafka error: {}", e)),
             Err(e) => {
                 info!("Kafka error: {}", e);
             }
