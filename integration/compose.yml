@@ -6,21 +6,22 @@ services:
     ports:
       - "9092:9092"
     networks:
-      testbed:
+      integration:
         ipv4_address: 10.0.0.100
 
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     volumes:
       - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - ./dataset-experiment.bin:/dataset-experiment.bin
     networks:
-      testbed:
+      integration:
         ipv4_address: 10.0.0.200
     depends_on:
       - redpanda
 
 networks:
-  testbed:
+  integration:
     driver: bridge
     enable_ipv6: true
     ipam:
