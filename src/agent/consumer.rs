@@ -1,7 +1,7 @@
-use log::info;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::stream_consumer::StreamConsumer;
 use rdkafka::consumer::{Consumer, DefaultConsumerContext};
+use tracing::info;
 
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;

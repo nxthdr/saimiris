@@ -1,9 +1,9 @@
 use caracat::models::Probe;
-use log::{debug, error, info};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::time::Duration;
+use tracing::{debug, error, info};
 
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;

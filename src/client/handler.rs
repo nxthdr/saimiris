@@ -1,8 +1,8 @@
 use anyhow::Result;
 use caracat::models::Probe;
-use log::trace;
 use std::io::{stdin, BufRead};
 use std::path::PathBuf;
+use tracing::trace;
 
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::client::producer::produce;

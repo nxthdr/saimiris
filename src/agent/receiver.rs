@@ -1,13 +1,13 @@
 use caracat::models::Reply;
 use caracat::receiver::Receiver;
 use hyperloglog::HyperLogLog;
-use log::{error, trace};
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use tracing::{error, trace};
 
 use crate::config::CaracatConfig;
 

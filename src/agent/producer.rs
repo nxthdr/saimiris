@@ -1,10 +1,10 @@
 use caracat::models::{MPLSLabel, Reply};
-use log::{debug, error, info, warn};
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
+use tracing::{debug, error, info, warn};
 
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;

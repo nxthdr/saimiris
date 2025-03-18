@@ -1,13 +1,13 @@
 use caracat::models::Probe;
 use caracat::rate_limiter::RateLimiter;
 use caracat::sender::Sender as CaracatSender;
-use log::{error, info, trace};
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use tracing::{error, info, trace};
 
 use crate::config::CaracatConfig;
 

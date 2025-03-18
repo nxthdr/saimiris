@@ -6,13 +6,11 @@ mod probe;
 mod utils;
 
 use anyhow::Result;
-use chrono::Local;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
-use env_logger::Builder;
-use log::error;
-use std::io::{stdin, IsTerminal, Write};
+use std::io::{stdin, IsTerminal};
 use std::path::PathBuf;
+use tracing::error;
 
 use crate::config::app_config;
 
@@ -56,25 +54,21 @@ struct GlobalOpts {
     verbose: Verbosity<InfoLevel>,
 }
 
-fn set_logging(cli: &GlobalOpts) {
-    Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter_module("saimiris", cli.verbose.log_level_filter())
-        .init();
+fn set_tracing(cli: &GlobalOpts) -> Result<()> {
+    let subscriber = tracing_subscriber::fmt()
+        .compact()
+        .with_file(true)
+        .with_line_number(true)
+        .with_max_level(cli.verbose)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)?;
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = App::parse();
-    set_logging(&cli.global_opts);
+    set_tracing(&cli.global_opts)?;
 
     match cli.command {
         Command::Agent { config } => {

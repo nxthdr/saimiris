@@ -1,10 +1,10 @@
 use anyhow::Result;
-use log::{debug, info, trace};
 use rdkafka::consumer::{CommitMode, Consumer};
 use rdkafka::message::Headers;
 use rdkafka::Message;
 use std::sync::mpsc::channel;
 use tokio::task;
+use tracing::{debug, info, trace};
 
 use crate::agent::consumer::init_consumer;
 use crate::agent::producer::produce;
