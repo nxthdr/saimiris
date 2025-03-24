@@ -1,11 +1,23 @@
 [package]
 name = "saimiris"
 version = "0.1.0"
+license = "MIT"
+readme = "README.md"
+description = "Internet Measurements Probing Pipeline"
+repository = "https://github.com/nxthdr/saimiris"
+homepage = "https://nxthdr.dev"
+keywords = ["internet", "measurements", "traceroute", "ping"]
 edition = "2021"
+exclude = [
+    ".github/*",
+    "integration/*",
+    "logo/*",
+    "renovate.json",
+]
 
 [dependencies]
 anyhow = "1.0.95"
-caracat = { git = "https://github.com/maxmouchet/caracat" }
+caracat = "1.4.2"
 clap = { version = "4.5.20", features = ["derive"] }
 clap-verbosity-flag = {version = "3.0.2", features = ["tracing"]}
 config = "0.15.6"
