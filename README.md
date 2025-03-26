@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo/logo.png" height="256" width="256" alt="Project Logo" />
+  <img src="https://nxthdr.dev/saimiris/logo.png" height="256" width="256" alt="Project Logo" />
 </p>
 
 # Saimiris
@@ -11,7 +11,7 @@
 
 The probing system is composed of two main components: the **client** and the **agent**. Those components send and receive messages from Kafka topics, respectively. The measurements results can be handled in any way, such as storing them in a ClickHouse database.
 
-Check the [testbed](testbed/README.md) for a quick setup to test the system.
+Check the [integration](./integration/) tests for a local quick setup of the system.
 
 ### Agent
 
