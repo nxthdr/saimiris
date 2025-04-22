@@ -3,34 +3,31 @@ use rdkafka::config::ClientConfig;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::time::Duration;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
-use crate::probe::encode_probe;
+use crate::probe::serialize_probe;
 
-fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<String> {
+fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<Vec<u8>> {
     let mut messages = Vec::new();
-    let mut current_message = String::new();
+    let mut current_message = Vec::new();
     for probe in probes {
-        // Format probe
-        let probe_str = encode_probe(&probe);
+        // Serialize the probe
+        let message = serialize_probe(&probe);
+
         // Max message size is 1048576 bytes (including headers)
-        if current_message.len() + probe_str.len() + 1 > message_max_bytes {
-            // Remove the last newline character
-            current_message.pop();
+        if current_message.len() + message.len() > message_max_bytes {
             messages.push(current_message);
-            current_message = String::new();
+            current_message = Vec::new();
         }
 
-        current_message.push_str(&probe_str);
-        current_message.push_str("\n");
+        current_message.extend_from_slice(&message);
     }
     if !current_message.is_empty() {
-        // Remove the last newline character
-        current_message.pop();
         messages.push(current_message);
     }
+
     messages
 }
 
@@ -76,11 +73,10 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, agents: Vec<&str>, pro
 
     // Send to Kafka
     for message in messages {
-        debug!("{}", message);
         let delivery_status = producer
             .send(
                 FutureRecord::to(topic)
-                    .payload(&format!("{}", message))
+                    .payload(&message)
                     .key(&format!("")) // TODO Client ID
                     .headers(headers.clone()),
                 Duration::from_secs(0),

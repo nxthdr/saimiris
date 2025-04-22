@@ -4,7 +4,7 @@ use rdkafka::message::Headers;
 use rdkafka::Message;
 use std::sync::mpsc::channel;
 use tokio::task;
-use tracing::{debug, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::agent::consumer::init_consumer;
 use crate::agent::producer::produce;
@@ -12,7 +12,7 @@ use crate::agent::receiver::ReceiveLoop;
 use crate::agent::sender::SendLoop;
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::config::AppConfig;
-use crate::probe::decode_probe;
+use crate::probe::deserialize_probes;
 use crate::utils::test_id;
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
@@ -66,24 +66,32 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     loop {
         match consumer.recv().await {
             Err(e) => {
-                info!("Kafka error: {}", e);
+                error!("Kafka consumer error: {}. Attempting to continue...", e);
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
             Ok(m) => {
-                let probes = match m.payload_view::<str>() {
-                    None => "",
-                    Some(Ok(s)) => s,
-                    Some(Err(e)) => {
-                        return Err(anyhow::anyhow!(
-                            "Kafka error: Error while deserializing message payload: {:?}",
-                            e
-                        ))
+                let payload_bytes = match m.payload() {
+                    None => {
+                        warn!("Received message with empty payload. Skipping.");
+                        if let Err(e) = consumer.commit_message(&m, CommitMode::Async) {
+                            error!("Failed to commit empty message: {}", e);
+                        }
+                        continue;
                     }
+                    Some(bytes) => bytes.to_vec(),
                 };
 
-                debug!("Received message");
+                debug!(
+                    "Received message with payload size: {}",
+                    payload_bytes.len()
+                );
                 if let Some(headers) = m.headers() {
                     for header in headers.iter() {
-                        debug!("Header {:#?}: {:?}", header.key, header.value);
+                        trace!(
+                            "Header {}: {:?}",
+                            header.key,
+                            String::from_utf8_lossy(header.value.unwrap_or_default())
+                        );
                     }
                 }
 
@@ -92,25 +100,42 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 let mut is_intended = false;
                 if let Some(headers) = m.headers() {
                     for header in headers.iter() {
-                        if header.key == &config.agent.id {
+                        if header.key == config.agent.id {
+                            debug!(
+                                "Message intended for this agent (header key match: {})",
+                                config.agent.id
+                            );
                             is_intended = true;
                             break;
                         }
                     }
                 }
-                if !is_intended {
-                    info!("Target not intended for this agent");
 
-                    // TODO: handle errors
-                    consumer.commit_message(&m, CommitMode::Async).unwrap();
+                if !is_intended {
+                    debug!(
+                        "Message not intended for this agent (ID: {}). Skipping.",
+                        config.agent.id
+                    );
+                    if let Err(e) = consumer.commit_message(&m, CommitMode::Async) {
+                        warn!("Failed to commit skipped message: {}", e);
+                    }
                     continue;
                 }
 
-                // Decode probes
-                let probes_to_send = probes
-                    .split('\n')
-                    .map(|probe| decode_probe(probe))
-                    .collect::<Result<Vec<_>>>()?;
+                // Deserialize probes
+                let probes_to_send = match deserialize_probes(payload_bytes) {
+                    Ok(probe) => {
+                        trace!("Successfully deserialized probe: {:?}", probe);
+                        probe
+                    }
+                    Err(e) => {
+                        error!("Failed to deserialize probe from Kafka message: {:?}. Skipping message.", e);
+                        if let Err(e) = consumer.commit_message(&m, CommitMode::Async) {
+                            warn!("Failed to commit skipped message: {}", e);
+                        }
+                        continue;
+                    }
+                };
 
                 // Send to the channel
                 tx_sender_probe.send(probes_to_send).unwrap();
