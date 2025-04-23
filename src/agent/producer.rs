@@ -1,55 +1,14 @@
-use caracat::models::{MPLSLabel, Reply};
+use caracat::models::Reply;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
-
-fn encode_mpls_labels(mpls_labels: &Vec<MPLSLabel>) -> String {
-    String::from("[")
-        + &mpls_labels
-            .iter()
-            .map(|label| {
-                format!(
-                    "({}, {}, {}, {})",
-                    label.label, label.experimental, label.bottom_of_stack, label.ttl
-                )
-            })
-            .collect::<Vec<String>>()
-            .join(", ")
-        + "]"
-}
-
-fn encode_reply(agent_id: String, reply: &Reply) -> String {
-    let mut output = vec![];
-    output.push(format!("{}", reply.capture_timestamp.as_millis()));
-    output.push(format!("{}", agent_id));
-    output.push(format!("{}", reply.reply_src_addr));
-    output.push(format!("{}", reply.reply_dst_addr));
-    output.push(format!("{}", reply.reply_id));
-    output.push(format!("{}", reply.reply_size));
-    output.push(format!("{}", reply.reply_ttl));
-    output.push(format!("{}", reply.reply_protocol));
-    output.push(format!("{}", reply.reply_icmp_type));
-    output.push(format!("{}", reply.reply_icmp_code));
-    output.push(format!("{}", encode_mpls_labels(&reply.reply_mpls_labels)));
-    output.push(format!("{}", reply.probe_src_addr));
-    output.push(format!("{}", reply.probe_dst_addr));
-    output.push(format!("{}", reply.probe_id));
-    output.push(format!("{}", reply.probe_size));
-    output.push(format!("{}", reply.probe_protocol));
-    output.push(format!("{}", reply.quoted_ttl));
-    output.push(format!("{}", reply.probe_src_port));
-    output.push(format!("{}", reply.probe_dst_port));
-    output.push(format!("{}", reply.probe_ttl));
-    output.push(format!("{}", reply.rtt));
-
-    output.join(",")
-}
+use crate::reply::serialize_reply;
 
 pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
     if config.kafka.out_enable == false {
@@ -76,18 +35,16 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             .expect("Producer creation error"),
     };
 
-    // Send to Kafka
     let mut additional_message = None;
     loop {
         let start_time = std::time::Instant::now();
-        let mut final_message = String::new();
+        let mut final_message = Vec::new();
         let mut n_messages = 0;
 
         // Send the additional reply first
         if let Some(message) = additional_message {
-            let message_str = encode_reply(config.agent.id.clone(), &message);
-            final_message.push_str(&message_str);
-            final_message.push_str("\n");
+            let message = serialize_reply(config.agent.id.clone(), &message);
+            final_message.extend_from_slice(&message);
             n_messages += 1;
             additional_message = None;
         }
@@ -107,16 +64,15 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             }
 
             let message = message.unwrap();
-            let message_str = encode_reply(config.agent.id.clone(), &message);
+            let message_bin = serialize_reply(config.agent.id.clone(), &message);
 
             // Max message size is 1048576 bytes (including headers)
-            if final_message.len() + message_str.len() + 1 > config.kafka.message_max_bytes {
+            if final_message.len() + message_bin.len() > config.kafka.message_max_bytes {
                 additional_message = Some(message);
                 break;
             }
 
-            final_message.push_str(&message_str);
-            final_message.push_str("\n");
+            final_message.extend_from_slice(&message_bin);
             n_messages += 1;
         }
 
@@ -124,16 +80,11 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             continue;
         }
 
-        // Remove the last newline character
-        final_message.pop();
-
-        debug!("{}", final_message);
         info!("Sending {} replies to Kafka", n_messages);
-
         let delivery_status = producer
             .send(
                 FutureRecord::to(config.kafka.out_topic.as_str())
-                    .payload(&format!("{}", final_message))
+                    .payload(&final_message)
                     .key(&format!("")) // TODO
                     .headers(OwnedHeaders::new()), // TODO
                 Duration::from_secs(0),

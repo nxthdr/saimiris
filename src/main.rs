@@ -4,6 +4,8 @@ mod client;
 mod config;
 mod probe;
 mod probe_capnp;
+mod reply;
+mod reply_capnp;
 mod utils;
 
 use anyhow::Result;

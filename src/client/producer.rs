@@ -14,15 +14,15 @@ fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<Vec<u8>>
     let mut current_message = Vec::new();
     for probe in probes {
         // Serialize the probe
-        let message = serialize_probe(&probe);
+        let message_bin = serialize_probe(&probe);
 
         // Max message size is 1048576 bytes (including headers)
-        if current_message.len() + message.len() > message_max_bytes {
+        if current_message.len() + message_bin.len() > message_max_bytes {
             messages.push(current_message);
             current_message = Vec::new();
         }
 
-        current_message.extend_from_slice(&message);
+        current_message.extend_from_slice(&message_bin);
     }
     if !current_message.is_empty() {
         messages.push(current_message);
