@@ -3,6 +3,9 @@ mod auth;
 mod client;
 mod config;
 mod probe;
+mod probe_capnp;
+mod reply;
+mod reply_capnp;
 mod utils;
 
 use anyhow::Result;
@@ -37,13 +40,13 @@ enum Command {
         #[arg(short, long)]
         config: String,
 
-        /// Agent IDs (comma separated)
-        #[arg(index = 1)]
-        agents: String,
-
         /// Probes file (read stdin if not provided)
         #[arg(short, long)]
         probes_file: Option<PathBuf>,
+
+        /// Agent IDs (comma separated)
+        #[arg(index = 1)]
+        agents: String,
     },
 }
 
@@ -83,7 +86,7 @@ async fn main() -> Result<()> {
             agents,
             probes_file,
         } => {
-            if stdin().is_terminal() {
+            if probes_file.is_none() && stdin().is_terminal() {
                 App::command().print_help().unwrap();
                 ::std::process::exit(2);
             }

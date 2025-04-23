@@ -1,7 +1,7 @@
 FROM rust:latest AS builder
 
 RUN apt-get update \
-    && apt-get install -y libpcap-dev libsasl2-dev libssl-dev \
+    && apt-get install -y libpcap-dev libsasl2-dev libssl-dev capnproto \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

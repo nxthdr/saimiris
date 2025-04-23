@@ -1,5 +1,6 @@
 use anyhow::Result;
 use caracat::models::Probe;
+use csv::ReaderBuilder;
 use std::io::{stdin, BufRead};
 use std::path::PathBuf;
 use tracing::trace;
@@ -7,15 +8,26 @@ use tracing::trace;
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::client::producer::produce;
 use crate::config::AppConfig;
-use crate::probe::decode_probe;
 
-fn read_probes<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
-    let mut probes = Vec::new();
-    for line in buf_reader.lines() {
-        let probe = line?;
-        probes.push(decode_probe(&probe)?);
-    }
-    Ok(probes)
+fn read_probes_from_csv<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
+    let probes = Vec::new();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(false)
+        .trim(csv::Trim::All)
+        .from_reader(buf_reader);
+
+    rdr.deserialize().enumerate().try_fold(
+        probes,
+        |mut acc, (i, result): (usize, Result<Probe, _>)| {
+            acc.push(result.map_err(|e: csv::Error| {
+                anyhow::anyhow!(e).context(format!(
+                    "Failed to deserialize probe from CSV at line {}",
+                    i + 1
+                ))
+            })?);
+            Ok(acc)
+        },
+    )
 }
 
 pub async fn handle(config: &AppConfig, agents: &str, probes_file: Option<PathBuf>) -> Result<()> {
@@ -42,12 +54,12 @@ pub async fn handle(config: &AppConfig, agents: &str, probes_file: Option<PathBu
         Some(probes_file) => {
             let file = std::fs::File::open(probes_file)?;
             let buf_reader = std::io::BufReader::new(file);
-            read_probes(buf_reader)?
+            read_probes_from_csv(buf_reader)?
         }
         None => {
             let stdin = stdin();
             let buf_reader = stdin.lock();
-            read_probes(buf_reader)?
+            read_probes_from_csv(buf_reader)?
         }
     };
 

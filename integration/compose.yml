@@ -13,7 +13,7 @@ services:
     image: clickhouse/clickhouse-server:latest
     volumes:
       - ./config/clickhouse/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
-      - ./dataset-experiment.bin:/dataset-experiment.bin
+      - ../schemas:/var/lib/clickhouse/format_schemas
     networks:
       integration:
         ipv4_address: 10.0.0.200
