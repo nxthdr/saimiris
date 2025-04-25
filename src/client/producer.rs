@@ -84,9 +84,14 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, agents: Vec<&str>, pro
             .await;
 
         match delivery_status {
-            Ok(status) => info!("{:?}", status),
+            Ok((partition, offset)) => {
+                info!(
+                    "successfully sent message to partition {} at offset {}",
+                    partition, offset
+                );
+            }
             Err((error, _)) => {
-                error!("{}", error.to_string());
+                error!("failed to send message: {}", error);
             }
         }
     }
