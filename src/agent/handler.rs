@@ -13,16 +13,10 @@ use crate::agent::sender::SendLoop;
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::config::AppConfig;
 use crate::probe::deserialize_probes;
-use crate::utils::test_id;
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
     trace!("Agent handler");
     trace!("{:?}", config);
-
-    // Test input ID
-    if !test_id(Some(config.agent.id.clone()), None, None) {
-        return Err(anyhow::anyhow!("Invalid agent ID"));
-    }
 
     info!("Agent ID: {}", config.agent.id);
 

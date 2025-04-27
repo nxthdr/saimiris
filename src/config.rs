@@ -2,8 +2,6 @@ use caracat::rate_limiter::RateLimitingMethod;
 use config::Config;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use crate::utils::generate_id;
-
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
     /// Agent identifier.
@@ -137,9 +135,7 @@ pub fn app_config(config_path: &str) -> AppConfig {
     AppConfig {
         // Agent configuration
         agent: AgentConfig {
-            id: config
-                .get_string("agent.id")
-                .unwrap_or(generate_id(None, None)),
+            id: config.get_string("agent.id").unwrap_or("none".to_string()),
         },
 
         // Caracat configuration

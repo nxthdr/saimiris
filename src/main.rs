@@ -6,7 +6,6 @@ mod probe;
 mod probe_capnp;
 mod reply;
 mod reply_capnp;
-mod utils;
 
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
