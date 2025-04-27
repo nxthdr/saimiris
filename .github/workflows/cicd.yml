@@ -11,12 +11,12 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - run: sudo apt install libpcap-dev libsasl2-dev libssl-dev capnproto
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - run: sudo apt install libpcap-dev libsasl2-dev libssl-dev capnproto
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          cargo check --locked
+          cargo test --locked --verbose
 
   docker:
     strategy:
