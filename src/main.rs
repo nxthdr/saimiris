@@ -10,9 +10,12 @@ mod reply_capnp;
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
+use metrics::describe_counter;
+use metrics_exporter_prometheus::PrometheusBuilder;
 use std::io::{stdin, IsTerminal};
+use std::net::SocketAddr;
 use std::path::PathBuf;
-use tracing::error;
+use tracing::{error, trace};
 
 use crate::config::app_config;
 
@@ -67,6 +70,48 @@ fn set_tracing(cli: &GlobalOpts) -> Result<()> {
     Ok(())
 }
 
+fn set_metrics(metrics_address: SocketAddr) {
+    let prom_builder = PrometheusBuilder::new();
+    prom_builder
+        .with_http_listener(metrics_address)
+        .install()
+        .expect("Failed to install Prometheus metrics exporter");
+
+    // Producer metrics
+    metrics::describe_counter!(
+        "risotto_kafka_messages_total",
+        "Total number of Kafka messages produced"
+    );
+
+    // Receiver Metrics
+    describe_counter!(
+        "saimiris_receiver_received_valid_total",
+        "Total number of valid replies received from the caracat receiver thread"
+    );
+    describe_counter!(
+        "saimiris_receiver_received_invalid_total",
+        "Total number of invalid replies received that failed the integrity check"
+    );
+
+    // Sender Metrics
+    describe_counter!(
+        "saimiris_sender_read_total",
+        "Total number of probes read from the sender thread"
+    );
+    describe_counter!(
+        "saimiris_sender_probes_sent_total",
+        "Total number of probes sent by the sender thread"
+    );
+    describe_counter!(
+        "saimiris_sender_failed_total",
+        "Total number of errors encountered by the sender thread while sending probes"
+    );
+    describe_counter!(
+        "saimiris_sender_filtered_total",
+        "Total number of probes filtered by the sender thread (low/high TTL)"
+    );
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = App::parse();
@@ -74,7 +119,9 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Command::Agent { config } => {
-            let app_config = app_config(&config);
+            let app_config = app_config(&config).await?;
+            trace!("{:?}", app_config);
+            set_metrics(app_config.agent.metrics_address);
             match agent::handle(&app_config).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
@@ -90,7 +137,8 @@ async fn main() -> Result<()> {
                 ::std::process::exit(2);
             }
 
-            let app_config = app_config(&config);
+            let app_config = app_config(&config).await?;
+            trace!("{:?}", app_config);
             match client::handle(&app_config, &agents, probes_file).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),

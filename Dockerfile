@@ -20,8 +20,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/saimiris /app/saimiris
 
-EXPOSE 3000
-EXPOSE 4000
+EXPOSE 8080
 
 ENTRYPOINT [ "/app/saimiris" ]
 CMD [ "--help" ]

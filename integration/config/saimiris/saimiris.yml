@@ -1,3 +1,6 @@
+agent:
+  id: wbmwwp9vna
+
 kafka:
   brokers: "localhost:9092"
   auth_protocol: PLAINTEXT
@@ -7,6 +10,3 @@ kafka:
 
   out_enable: true
   out_topic: saimiris-results
-
-agent:
-  id: wbmwwp9vna

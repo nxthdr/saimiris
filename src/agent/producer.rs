@@ -1,10 +1,11 @@
 use caracat::models::Reply;
+use metrics::counter;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{debug, error, warn};
 
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
@@ -80,7 +81,7 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             continue;
         }
 
-        info!("Sending {} replies to Kafka", n_messages);
+        debug!("Sending {} replies to Kafka", n_messages);
         let delivery_status = producer
             .send(
                 FutureRecord::to(config.kafka.out_topic.as_str())
@@ -91,14 +92,19 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             )
             .await;
 
+        let metric_name = "saimiris_kafka_messages_total";
         match delivery_status {
             Ok((partition, offset)) => {
-                info!(
+                counter!(metric_name, "agent" => config.agent.id.clone(), "status" => "success")
+                    .increment(1);
+                debug!(
                     "successfully sent message to partition {} at offset {}",
                     partition, offset
                 );
             }
             Err((error, _)) => {
+                counter!(metric_name, "agent" => config.agent.id.clone(), "status" => "failure")
+                    .increment(1);
                 error!("failed to send message: {}", error);
             }
         }
