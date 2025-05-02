@@ -1,12 +1,18 @@
+use anyhow::Result;
 use caracat::rate_limiter::RateLimitingMethod;
 use config::Config;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use tokio::net::lookup_host;
 
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
     /// Agent identifier.
     /// Default: random
     pub id: String,
+
+    /// Metrics listener address (IP or FQDN) for Prometheus endpoint
+    /// Default: 0.0.0.0:8080
+    pub metrics_address: SocketAddr,
 }
 
 #[derive(Debug, Clone)]
@@ -46,10 +52,6 @@ pub struct CaracatConfig {
     /// Source IPv6 address
     /// Default: None
     pub src_ipv6_addr: Option<Ipv6Addr>,
-
-    /// Maximum number of probes to send (unlimited by default).
-    /// Default: None
-    pub max_probes: Option<u64>,
 
     /// Number of packets to send per probe.
     /// Default: 1
@@ -130,12 +132,27 @@ fn load_config(config_path: &str) -> Config {
         .unwrap()
 }
 
-pub fn app_config(config_path: &str) -> AppConfig {
+pub async fn resolve_address(address: String) -> Result<SocketAddr> {
+    match lookup_host(&address).await?.next() {
+        Some(addr) => Ok(addr),
+        None => anyhow::bail!("Failed to resolve address: {}", address),
+    }
+}
+
+pub async fn app_config(config_path: &str) -> Result<AppConfig> {
     let config = load_config(config_path);
-    AppConfig {
+
+    let metric_address = resolve_address(
+        config
+            .get_string("agent.metrics_address")
+            .unwrap_or("0.0.0.0:8080".to_string()),
+    )
+    .await?;
+    Ok(AppConfig {
         // Agent configuration
         agent: AgentConfig {
             id: config.get_string("agent.id").unwrap_or("none".to_string()),
+            metrics_address: metric_address,
         },
 
         // Caracat configuration
@@ -157,7 +174,6 @@ pub fn app_config(config_path: &str) -> AppConfig {
                 .get_string("caracat.src_ipv6_addr")
                 .ok()
                 .and_then(|x| x.parse().ok()),
-            max_probes: config.get_int("caracat.max_probes").ok().map(|x| x as u64),
             packets: config.get_int("caracat.packets").unwrap_or(1) as u64,
             probing_rate: config.get_int("caracat.probing_rate").unwrap_or(100) as u64,
             rate_limiting_method: caracat::rate_limiter::RateLimitingMethod::Auto, // TODO
@@ -196,5 +212,5 @@ pub fn app_config(config_path: &str) -> AppConfig {
                 .get_int("kafka.out_batch_wait_interval")
                 .unwrap_or(100) as u64,
         },
-    }
+    })
 }

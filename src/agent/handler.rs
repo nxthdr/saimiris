@@ -43,10 +43,10 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     let (tx_reply, rx_reply) = channel();
 
     debug!("Starting caracat sender");
-    SendLoop::new(rx_sender_probe, tx_sender_feedback, config.caracat.clone());
+    SendLoop::new(rx_sender_probe, tx_sender_feedback, config.clone());
 
     debug!("Starting caracat receiver");
-    ReceiveLoop::new(tx_reply, config.caracat.clone());
+    ReceiveLoop::new(tx_reply, config.clone());
 
     // Start the Kafka producer task if enabled
     let config_task = config.clone();
