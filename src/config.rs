@@ -1,7 +1,10 @@
 use anyhow::Result;
 use caracat::rate_limiter::RateLimitingMethod;
 use config::Config;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::{
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    path::PathBuf,
+};
 use tokio::net::lookup_host;
 
 #[derive(Debug, Clone)]
@@ -122,6 +125,14 @@ pub struct AppConfig {
     pub agent: AgentConfig,
     pub caracat: CaracatConfig,
     pub kafka: KafkaConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClientConfig {
+    pub agents: Vec<String>,
+    pub probes_file: Option<PathBuf>,
+    pub anycast: bool,
+    pub rate: Option<u32>,
 }
 
 fn load_config(config_path: &str) -> Config {

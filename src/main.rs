@@ -10,12 +10,13 @@ mod reply_capnp;
 use anyhow::Result;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
+use config::ClientConfig;
 use metrics::describe_counter;
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::io::{stdin, IsTerminal};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use tracing::{error, trace};
+use tracing::error;
 
 use crate::config::app_config;
 
@@ -45,6 +46,14 @@ enum Command {
         /// Probes file (read stdin if not provided)
         #[arg(short, long)]
         probes_file: Option<PathBuf>,
+
+        /// Unicast or Anycast probing
+        #[arg(long)]
+        anycast: bool,
+
+        /// Maximum probing rate
+        #[arg(long)]
+        rate: Option<u32>,
 
         /// Agent IDs (comma separated)
         #[arg(index = 1)]
@@ -120,28 +129,35 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Agent { config } => {
             let app_config = app_config(&config).await?;
-            trace!("{:?}", app_config);
             set_metrics(app_config.agent.metrics_address);
             match agent::handle(&app_config).await {
                 Ok(_) => (),
-                Err(e) => error!("Error: {}", e),
+                Err(e) => error!("{}", e),
             }
         }
         Command::Client {
             config,
-            agents,
             probes_file,
+            agents,
+            anycast,
+            rate,
         } => {
             if probes_file.is_none() && stdin().is_terminal() {
                 App::command().print_help().unwrap();
                 ::std::process::exit(2);
             }
 
+            let client_config = ClientConfig {
+                agents: agents.split(',').map(|s| s.to_string()).collect(),
+                probes_file: probes_file.clone(),
+                anycast,
+                rate,
+            };
+
             let app_config = app_config(&config).await?;
-            trace!("{:?}", app_config);
-            match client::handle(&app_config, &agents, probes_file).await {
+            match client::handle(&app_config, &client_config).await {
                 Ok(_) => (),
-                Err(e) => error!("Error: {}", e),
+                Err(e) => error!("{}", e),
             }
         }
     }

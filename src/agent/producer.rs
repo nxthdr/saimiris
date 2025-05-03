@@ -86,8 +86,8 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
             .send(
                 FutureRecord::to(config.kafka.out_topic.as_str())
                     .payload(&final_message)
-                    .key(&format!("")) // TODO
-                    .headers(OwnedHeaders::new()), // TODO
+                    .key(&format!(""))
+                    .headers(OwnedHeaders::new()),
                 Duration::from_secs(0),
             )
             .await;

@@ -2,14 +2,12 @@ use anyhow::Result;
 use caracat::models::Probe;
 use csv::ReaderBuilder;
 use std::io::{stdin, BufRead};
-use std::path::PathBuf;
 use tracing::trace;
 
-use crate::auth::{KafkaAuth, SaslAuth};
 use crate::client::producer::produce;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, ClientConfig};
 
-fn read_probes_from_csv<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
+fn read_probes_from_csv<R: BufRead>(buf_reader: R, anycast: bool) -> Result<Vec<Probe>> {
     let probes = Vec::new();
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)
@@ -30,27 +28,12 @@ fn read_probes_from_csv<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
     )
 }
 
-pub async fn handle(config: &AppConfig, agents: &str, probes_file: Option<PathBuf>) -> Result<()> {
+pub async fn handle(app_config: &AppConfig, client_config: &ClientConfig) -> Result<()> {
     trace!("Client handler");
-    trace!("{:?}", config);
-
-    // Configure Kafka authentication
-    let auth = match config.kafka.auth_protocol.as_str() {
-        "PLAINTEXT" => KafkaAuth::PlainText,
-        "SASL_PLAINTEXT" => KafkaAuth::SasalPlainText(SaslAuth {
-            username: config.kafka.auth_sasl_username.clone(),
-            password: config.kafka.auth_sasl_password.clone(),
-            mechanism: config.kafka.auth_sasl_mechanism.clone(),
-        }),
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Invalid Kafka producer authentication protocol"
-            ))
-        }
-    };
+    trace!("{:?}", app_config);
 
     // Read probes from file or stdin
-    let probes = match probes_file {
+    let probes = match &client_config.probes_file {
         Some(probes_file) => {
             let file = std::fs::File::open(probes_file)?;
             let buf_reader = std::io::BufReader::new(file);
@@ -63,11 +46,8 @@ pub async fn handle(config: &AppConfig, agents: &str, probes_file: Option<PathBu
         }
     };
 
-    // Split the agents
-    let agents = agents.split(',').collect::<Vec<&str>>();
-
     // Produce Kafka messages
-    produce(config, auth, agents, probes).await;
+    produce(app_config, &client_config, probes).await;
 
     Ok(())
 }
