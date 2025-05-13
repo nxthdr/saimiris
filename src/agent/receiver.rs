@@ -36,7 +36,8 @@ impl ReceiveLoop {
                 let result = receiver.next_reply();
                 match result {
                     Ok(reply) => {
-                        counter!("saimiris_receiver_received", metrics_labels.clone()).increment(1);
+                        counter!("saimiris_receiver_received_total", metrics_labels.clone())
+                            .increment(1);
                         if !config.caracat.integrity_check
                             || (config.caracat.integrity_check
                                 && reply.is_valid(config.caracat.instance_id))
@@ -53,6 +54,11 @@ impl ReceiveLoop {
                         }
                     }
                     Err(error) => {
+                        counter!(
+                            "saimiris_receiver_received_error_total",
+                            metrics_labels.clone()
+                        )
+                        .increment(1);
                         // TODO: Cleanup this by returning a proper error type,
                         // e.g. ReceiverError::CaptureError(...)
                         match error.downcast_ref::<pcap::Error>() {
@@ -62,11 +68,6 @@ impl ReceiveLoop {
                             },
                             None => {
                                 error!("{:?}", error);
-                                counter!(
-                                    "saimiris_receiver_received_total",
-                                    metrics_labels.clone()
-                                )
-                                .increment(1);
                             }
                         }
                     }
