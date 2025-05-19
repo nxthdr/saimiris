@@ -18,7 +18,7 @@ Check the [integration](./integration/) tests for a local quick setup of the sys
 The agent performs the measurements. It is always listening for results. It consumes probes to send from Kafka topic, performs the measurements, and then produces the results to another Kafka topic.
 
 ```sh
-samiris agent --config=saimiris.yml
+saimiris agent --config=saimiris.yml
 ```
 
 ### Client
@@ -27,7 +27,7 @@ The client is the agent that sends the measurements to the agent. It sends messa
 
 
 ```sh
-cat probes.txt | samiris client --config=saimiris.yml <comma-separated-agent-ids>
+cat probes.txt | saimiris client --config=saimiris.yml <comma-separated-agent-ids>
 ```
 
 The probes to send are in the [caracal](https://dioptra-io.github.io/caracal/usage/) format.

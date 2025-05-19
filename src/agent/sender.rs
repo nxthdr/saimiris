@@ -52,8 +52,6 @@ impl SendLoop {
                 counter!("saimiris_sender_read_total", metrics_labels.clone())
                     .increment(probes.len().try_into().unwrap());
 
-                let mut filtered_low_ttl = 0;
-                let mut filtered_high_ttl = 0;
                 let mut sent = 0;
                 let mut failed = 0;
                 for probe in probes {
@@ -62,7 +60,8 @@ impl SendLoop {
                     if let Some(ttl) = config.caracat.min_ttl {
                         if probe.ttl < ttl {
                             trace!("{:?} filter=ttl_too_low", probe);
-                            filtered_low_ttl += 1;
+                            counter!("saimiris_sender_filtered_total", "agent" => config.agent.id.clone(), "filter" => "ttl_too_low")
+                                .increment(1);
                             continue;
                         }
                     }
@@ -70,7 +69,8 @@ impl SendLoop {
                     if let Some(ttl) = config.caracat.max_ttl {
                         if probe.ttl > ttl {
                             trace!("{:?} filter=ttl_too_high", probe);
-                            filtered_high_ttl += 1;
+                            counter!("saimiris_sender_filtered_total", "agent" => config.agent.id.clone(), "filter" => "ttl_too_high")
+                                .increment(1);
                             continue;
                         }
                     }
@@ -83,22 +83,20 @@ impl SendLoop {
                             i + 1
                         );
                         match caracat_sender.send(&probe) {
-                            Ok(_) => sent += 1,
+                            Ok(_) => {
+                                sent += 1;
+                                counter!("saimiris_sender_sent_total", metrics_labels.clone())
+                                    .increment(1);
+                            }
                             Err(error) => {
                                 failed += 1;
                                 error!("{}", error);
+                                counter!("saimiris_sender_failed_total", metrics_labels.clone())
+                                    .increment(1);
                             }
                         }
                         // Rate limit every `batch_size` packets sent.
                         if (sent + failed) % config.caracat.batch_size == 0 {
-                            counter!("saimiris_sender_filtered_total", "agent" => config.agent.id.clone(), "filter" => "ttl_too_low")
-                                .increment(filtered_low_ttl);
-                            counter!("saimiris_sender_filtered_total", "agent" => config.agent.id.clone(), "filter" => "ttl_too_high")
-                                .increment(filtered_high_ttl);
-                            counter!("saimiris_sender_sent_total", metrics_labels.clone())
-                                .increment(sent);
-                            counter!("saimiris_sender_failed_total", metrics_labels.clone())
-                                .increment(failed);
                             rate_limiter.wait();
                         }
                     }
