@@ -7,9 +7,11 @@
 > [!WARNING]
 > Currently in early-stage development.
 
+Saimiris is a internet-scale internet measurement pipeline.
+
 ## Architecture
 
-The probing system is composed of two main components: the **client** and the **agent**. Those components send and receive messages from Kafka topics, respectively. The measurements results can be handled in any way, such as storing them in a ClickHouse database.
+Saimiris is composed of two main components: the **client** and the **agent**. Those components send and receive messages from Kafka topics, respectively. The measurements results can be handled in any way, such as storing them in a ClickHouse database.
 
 Check the [integration](./integration/) tests for a local quick setup of the system.
 
