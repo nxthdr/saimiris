@@ -77,7 +77,7 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, agents: Vec<&str>, pro
             .send(
                 FutureRecord::to(topic)
                     .payload(&message)
-                    .key(&format!("")) // TODO Client ID
+                    .key(&format!(""))
                     .headers(headers.clone()),
                 Duration::from_secs(0),
             )

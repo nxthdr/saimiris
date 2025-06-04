@@ -7,7 +7,7 @@
 > [!WARNING]
 > Currently in early-stage development.
 
-Saimiris is a internet-scale internet measurement pipeline.
+Saimiris is a internet-scale internet measurements pipeline.
 
 ## Architecture
 
