@@ -11,7 +11,6 @@ use tracing::{debug, error, info, trace};
 
 use crate::config::CaracatConfig;
 
-#[allow(dead_code)]
 pub struct ReceiveLoop {
     handle: JoinHandle<()>,
     stopped: Arc<Mutex<bool>>,
