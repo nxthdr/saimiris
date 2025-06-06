@@ -71,7 +71,7 @@ pub async fn handle(
     // Split the agents
     let agents = agents.split(',').map(String::from).collect::<Vec<String>>();
 
-    // Slit the agent source IPs if provided
+    // Split the agent source IPs if provided
     let agent_src_ips = match agent_src_ips {
         Some(src_ips_str) => {
             let parsed_ips: Vec<String> = src_ips_str
