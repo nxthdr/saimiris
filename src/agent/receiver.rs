@@ -2,13 +2,14 @@ use caracat::models::Reply;
 use caracat::receiver::Receiver;
 use metrics::counter;
 use metrics::Label;
-use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
-use tracing::{error, trace};
+use tokio::runtime::Handle as TokioHandle;
+use tokio::sync::mpsc::Sender as TokioSender;
+use tracing::{debug, error, info, trace};
 
-use crate::config::AppConfig;
+use crate::config::CaracatConfig;
 
 #[allow(dead_code)]
 pub struct ReceiveLoop {
@@ -17,34 +18,71 @@ pub struct ReceiveLoop {
 }
 
 impl ReceiveLoop {
-    pub fn new(tx: Sender<Reply>, config: AppConfig) -> Self {
-        // By default if a thread panic, the other threads are not affected and the error
-        // is only surfaced when joining the thread. However since this is a long-lived thread,
-        // we're not calling join until the end of the process. Since this loop is critical to
-        // the process, we don't want it to crash silently. We currently rely on
-        // `utilities::exit_process_on_panic` but we might find a better way in the future.
+    pub fn new(
+        tx: TokioSender<Reply>,
+        agent_id: String,
+        config: CaracatConfig,
+        runtime_handle: TokioHandle,
+    ) -> Self {
         let stopped = Arc::new(Mutex::new(false));
         let stopped_thr = stopped.clone();
 
-        let tx_thr = tx.clone();
-        let metrics_labels = vec![Label::new("agent", config.agent.id.to_string())];
+        let metrics_labels = vec![Label::new("agent", agent_id.to_string())];
+        let interface_name = config.interface.clone(); // Clone for logging
+
+        let thread_runtime_handle = runtime_handle.clone();
 
         let handle = thread::spawn(move || {
-            let mut receiver = Receiver::new_batch(&config.caracat.interface).unwrap();
+            debug!(
+                "ReceiveLoop thread started for interface: {}",
+                interface_name
+            );
+            let mut receiver = match Receiver::new_batch(&config.interface) {
+                Ok(r) => r,
+                Err(e) => {
+                    error!(
+                        "Failed to create Caracat receiver for interface {}: {}. ReceiveLoop thread exiting.",
+                        config.interface, e
+                    );
+                    if let Ok(mut s) = stopped_thr.lock() {
+                        *s = true;
+                    }
+                    return;
+                }
+            };
 
             loop {
+                if *stopped_thr.lock().unwrap() {
+                    trace!("Stopping receive loop for interface: {}", config.interface);
+                    break;
+                }
+
+                // The `next_reply()` might block, which is fine for a std::thread.
                 let result = receiver.next_reply();
                 match result {
                     Ok(reply) => {
                         counter!("saimiris_receiver_received_total", metrics_labels.clone())
                             .increment(1);
-                        if !config.caracat.integrity_check
-                            || (config.caracat.integrity_check
-                                && reply.is_valid(config.caracat.instance_id))
+                        if !config.integrity_check
+                            || (config.integrity_check && reply.is_valid(config.instance_id))
                         {
-                            tx_thr.send(reply).unwrap();
-                            // TODO: Write round column.
-                            // TODO: Compare output with caracal (capture timestamp resolution?)
+                            // Send to the Tokio MPSC channel. This is an async operation,
+                            // so we need to block on it from this synchronous thread.
+                            match thread_runtime_handle.block_on(tx.send(reply)) {
+                                Ok(_) => {
+                                    trace!(
+                                        "Reply sent from ReceiveLoop for interface: {}",
+                                        config.interface
+                                    );
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Failed to send reply from ReceiveLoop for interface {}: {}. Receiver (Kafka producer) might have shut down. Stopping loop.",
+                                        config.interface, e
+                                    );
+                                    break;
+                                }
+                            }
                         } else {
                             counter!(
                                 "saimiris_receiver_received_invalid_total",
@@ -54,30 +92,44 @@ impl ReceiveLoop {
                         }
                     }
                     Err(error) => {
+                        if *stopped_thr.lock().unwrap() {
+                            trace!(
+                                "Stopping receive loop for interface {} during error handling.",
+                                config.interface
+                            );
+                            break;
+                        }
+
                         counter!(
                             "saimiris_receiver_received_error_total",
                             metrics_labels.clone()
                         )
                         .increment(1);
-                        // TODO: Cleanup this by returning a proper error type,
-                        // e.g. ReceiverError::CaptureError(...)
                         match error.downcast_ref::<pcap::Error>() {
-                            Some(error) => match error {
-                                pcap::Error::TimeoutExpired => {}
-                                _ => error!("{:?}", error),
+                            Some(pcap_error) => match pcap_error {
+                                pcap::Error::TimeoutExpired => {
+                                    // This is expected if pcap has a read timeout.
+                                    // Continue the loop unless stopped.
+                                }
+                                _ => error!(
+                                    "pcap error in ReceiveLoop for interface {}: {:?}",
+                                    config.interface, pcap_error
+                                ),
                             },
                             None => {
-                                error!("{:?}", error);
+                                error!(
+                                    "Unknown error in ReceiveLoop for interface {}: {:?}",
+                                    config.interface, error
+                                );
                             }
                         }
                     }
                 }
-
-                if *stopped_thr.lock().unwrap() {
-                    trace!("Stopping receive loop");
-                    break;
-                }
             }
+            debug!(
+                "ReceiveLoop thread finished for interface: {}",
+                interface_name
+            );
         });
 
         ReceiveLoop { handle, stopped }
@@ -85,7 +137,15 @@ impl ReceiveLoop {
 
     #[allow(dead_code)]
     pub fn stop(self) {
-        *self.stopped.lock().unwrap() = true;
-        self.handle.join().unwrap();
+        info!("Requesting stop for ReceiveLoop.");
+        if let Ok(mut stopped_lock) = self.stopped.lock() {
+            *stopped_lock = true;
+        } else {
+            error!("Failed to acquire lock to stop ReceiveLoop.");
+        }
+        match self.handle.join() {
+            Ok(_) => info!("ReceiveLoop successfully joined."),
+            Err(e) => error!("Error joining ReceiveLoop thread: {:?}", e),
+        }
     }
 }

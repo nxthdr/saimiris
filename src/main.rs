@@ -49,6 +49,11 @@ enum Command {
         /// Agent IDs (comma separated)
         #[arg(index = 1)]
         agents: String,
+
+        /// Optional comma-separated list of source IP addresses, one for each agent.
+        /// If provided, the number of IPs must match the number of agents.
+        #[arg(long)]
+        agent_src_ips: Option<String>,
     },
 }
 
@@ -131,6 +136,7 @@ async fn main() -> Result<()> {
             config,
             agents,
             probes_file,
+            agent_src_ips,
         } => {
             if probes_file.is_none() && stdin().is_terminal() {
                 App::command().print_help().unwrap();
@@ -139,7 +145,7 @@ async fn main() -> Result<()> {
 
             let app_config = app_config(&config).await?;
             trace!("{:?}", app_config);
-            match client::handle(&app_config, &agents, probes_file).await {
+            match client::handle(&app_config, &agents, agent_src_ips, probes_file).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
             }

@@ -3,19 +3,21 @@ use metrics::counter;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::OwnedHeaders;
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use std::sync::mpsc::Receiver;
 use std::time::Duration;
+use tokio::sync::mpsc::Receiver;
 use tracing::{debug, error, warn};
 
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
 use crate::reply::serialize_reply;
 
-pub async fn produce(config: &AppConfig, auth: KafkaAuth, rx: Receiver<Reply>) {
+pub async fn produce(config: &AppConfig, auth: KafkaAuth, mut rx: Receiver<Reply>) {
     if config.kafka.out_enable == false {
         warn!("Kafka producer is disabled");
         loop {
-            rx.recv().unwrap();
+            rx.recv()
+                .await
+                .expect("Failed to receive message from Kafka producer channel");
         }
     }
 

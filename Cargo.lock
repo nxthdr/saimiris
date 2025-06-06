@@ -1729,6 +1729,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "pcap",
  "rdkafka",
+ "serde",
  "tokio",
  "tracing",
  "tracing-subscriber",
