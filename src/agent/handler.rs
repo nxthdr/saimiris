@@ -76,8 +76,6 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
         let (tx_probe_to_sender, rx_probes_for_sender): (Sender<Vec<Probe>>, Receiver<Vec<Probe>>) =
             channel(100000);
-        let (tx_feedback_from_sender, rx_feedback_for_this_sender): (Sender<bool>, Receiver<bool>) =
-            channel(1);
 
         if default_probe_sender_channel.is_none() {
             default_probe_sender_channel = Some(tx_probe_to_sender.clone());
@@ -108,7 +106,6 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
         SendLoop::new(
             rx_probes_for_sender,
-            tx_feedback_from_sender,
             config.agent.id.clone(),
             caracat_cfg.clone(),
             current_tokio_handle.clone(),
@@ -128,7 +125,6 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             "Caracat receiver started for interface {}",
             caracat_cfg.interface
         );
-        _feedback_receivers_for_send_loops.push(rx_feedback_for_this_sender);
     }
 
     // -- Configure Kafka producer and consumer --

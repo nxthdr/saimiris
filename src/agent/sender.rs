@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use tokio::runtime::Handle as TokioHandle;
-use tokio::sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender};
-use tracing::{debug, error, info, trace, warn};
+use tokio::sync::mpsc::Receiver as TokioReceiver;
+use tracing::{debug, error, info, trace};
 
 use crate::config::CaracatConfig;
 
@@ -20,7 +20,6 @@ pub struct SendLoop {
 impl SendLoop {
     pub fn new(
         mut rx: TokioReceiver<Vec<Probe>>,
-        feedback: TokioSender<bool>,
         agent_id: String,
         config: CaracatConfig,
         runtime_handle: TokioHandle,
@@ -96,13 +95,6 @@ impl SendLoop {
                             "Stopping SendLoop mid-batch for interface: {}",
                             config.interface
                         );
-                        // Use the passed runtime handle
-                        if thread_runtime_handle
-                            .block_on(feedback.send(true)) // Or false to indicate partial completion/stop
-                            .is_err()
-                        {
-                            warn!("Failed to send feedback from SendLoop on interface {} during mid-batch stop (receiver dropped).", config.interface);
-                        }
                         return;
                     }
 
@@ -152,11 +144,6 @@ impl SendLoop {
                             rate_limiter.wait();
                         }
                     }
-                }
-
-                // Use the passed runtime handle
-                if thread_runtime_handle.block_on(feedback.send(true)).is_err() {
-                    warn!("Failed to send feedback from SendLoop on interface {} (receiver dropped). Loop may exit if this is unexpected.", config.interface);
                 }
             }
             debug!("SendLoop thread finished for interface: {}", interface_name);

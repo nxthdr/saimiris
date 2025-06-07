@@ -77,7 +77,13 @@ pub async fn handle(
             let parsed_ips: Vec<Option<String>> = src_ips_str
                 .split(',')
                 .map(str::trim) // Trim whitespace around each IP
-                .map(|s| if s.is_empty() { None } else { Some(s.to_string()) }) // Map empty strings to None and non-empty strings to Some(String)
+                .map(|s| {
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                }) // Map empty strings to None and non-empty strings to Some(String)
                 .collect();
 
             parsed_ips
