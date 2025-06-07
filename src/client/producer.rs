@@ -31,7 +31,13 @@ fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<Vec<u8>>
     messages
 }
 
-pub async fn produce(config: &AppConfig, auth: KafkaAuth, agents: Vec<&str>, probes: Vec<Probe>) {
+pub async fn produce(
+    config: &AppConfig,
+    auth: KafkaAuth,
+    agents: Vec<String>,
+    agent_src_ips: Vec<Option<String>>,
+    probes: Vec<Probe>,
+) {
     let producer: &FutureProducer = match auth {
         KafkaAuth::PlainText => &ClientConfig::new()
             .set("bootstrap.servers", config.kafka.brokers.clone())
@@ -53,10 +59,10 @@ pub async fn produce(config: &AppConfig, auth: KafkaAuth, agents: Vec<&str>, pro
 
     // Construct headers
     let mut headers = OwnedHeaders::new();
-    for agent in agents {
+    for (agent, agent_src_ip) in agents.iter().zip(agent_src_ips) {
         headers = headers.insert(Header {
-            key: agent,
-            value: Some(agent),
+            key: &agent,
+            value: agent_src_ip.as_ref(),
         });
     }
 

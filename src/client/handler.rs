@@ -30,7 +30,12 @@ fn read_probes_from_csv<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
     )
 }
 
-pub async fn handle(config: &AppConfig, agents: &str, probes_file: Option<PathBuf>) -> Result<()> {
+pub async fn handle(
+    config: &AppConfig,
+    agents: &str,
+    agent_src_ips: Option<String>,
+    probes_file: Option<PathBuf>,
+) -> Result<()> {
     trace!("Client handler");
     trace!("{:?}", config);
 
@@ -64,10 +69,34 @@ pub async fn handle(config: &AppConfig, agents: &str, probes_file: Option<PathBu
     };
 
     // Split the agents
-    let agents = agents.split(',').collect::<Vec<&str>>();
+    let agents = agents.split(',').map(String::from).collect::<Vec<String>>();
+
+    // Split the agent source IPs if provided
+    let agent_src_ips = match agent_src_ips {
+        Some(src_ips_str) => {
+            let parsed_ips: Vec<Option<String>> = src_ips_str
+                .split(',')
+                .map(str::trim) // Trim whitespace around each IP
+                .map(|s| if s.is_empty() { None } else { Some(s.to_string()) }) // Map empty strings to None and non-empty strings to Some(String)
+                .collect();
+
+            parsed_ips
+        }
+        None => {
+            // Construct a vector of None with the same length as agents
+            vec![None; agents.len()]
+        }
+    };
+
+    // Validate agent source IPs if provided
+    if agent_src_ips.len() != agents.len() {
+        return Err(anyhow::anyhow!(
+            "Number of agent source IPs must match the number of agents"
+        ));
+    }
 
     // Produce Kafka messages
-    produce(config, auth, agents, probes).await;
+    produce(config, auth, agents, agent_src_ips, probes).await;
 
     Ok(())
 }
