@@ -106,8 +106,8 @@ fn default_kafka_auth_sasl_mechanism() -> String {
     "SCRAM-SHA-512".to_string()
 }
 fn default_kafka_message_max_bytes() -> usize {
-    1_048_576
-} // 1 MiB
+    990_000
+}
 fn default_kafka_in_topics() -> String {
     "saimiris-targets".to_string()
 }
