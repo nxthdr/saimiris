@@ -14,7 +14,7 @@ use crate::agent::producer;
 use crate::agent::receiver::ReceiveLoop;
 use crate::agent::sender::SendLoop;
 use crate::auth::{KafkaAuth, SaslAuth};
-use crate::config::AppConfig;
+use crate::config::{AppConfig, CaracatConfig};
 use crate::probe::deserialize_probes;
 
 fn determine_target_sender(
@@ -48,7 +48,6 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     trace!("Agent handler");
     info!("Agent ID: {}", config.agent.id);
 
-    // Get the current Tokio runtime handle
     let current_tokio_handle = TokioHandle::current();
 
     if config.caracat.is_empty() {
@@ -57,8 +56,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         );
     }
 
-    // -- Configure Caracat senders and receivers --
-    // Create a channel for replies from Caracat receivers to Kafka producer
+    // Channel for all replies from all ReceiveLoops to the single Kafka producer
     let (tx_async_reply_to_producer, rx_async_reply_for_producer): (
         Sender<Reply>,
         Receiver<Reply>,
@@ -66,22 +64,22 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
     let mut probe_senders_map: HashMap<String, Sender<Vec<Probe>>> = HashMap::new();
     let mut default_probe_sender_channel: Option<Sender<Vec<Probe>>> = None;
-    let mut _feedback_receivers_for_send_loops: Vec<Receiver<bool>> = Vec::new();
 
+    // --- Setup SendLoops (one per CaracatConfig) ---
     for caracat_cfg in &config.caracat {
         debug!(
-            "Initializing Caracat instance for interface: {}, src_ipv4: {:?}, src_ipv6: {:?}",
-            caracat_cfg.interface, caracat_cfg.src_ipv4_addr, caracat_cfg.src_ipv6_addr
+            "Initializing SendLoop for Caracat instance: interface: {}, src_ipv4: {:?}, src_ipv6: {:?}, instance_id: {}",
+            caracat_cfg.interface, caracat_cfg.src_ipv4_addr, caracat_cfg.src_ipv6_addr, caracat_cfg.instance_id
         );
 
         let (tx_probe_to_sender, rx_probes_for_sender): (Sender<Vec<Probe>>, Receiver<Vec<Probe>>) =
-            channel(100000);
+            channel(100000); // Probes for this specific SendLoop
 
         if default_probe_sender_channel.is_none() {
             default_probe_sender_channel = Some(tx_probe_to_sender.clone());
             debug!(
-                "Set default sender to the one for interface: {}",
-                caracat_cfg.interface
+                "Set default sender channel to the one for interface: {} (Instance ID: {})",
+                caracat_cfg.interface, caracat_cfg.instance_id
             );
         }
 
@@ -92,16 +90,16 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
         if let Some(ip_key) = sender_ip_key {
             if probe_senders_map.contains_key(&ip_key) {
-                warn!("Duplicate Caracat configuration for source IP: {}. Only the first one will be targetable by this IP via header.", ip_key);
+                warn!("Duplicate Caracat configuration for source IP: {}. Only the first one will be targetable by this IP via header. (Associated with instance_id: {})", ip_key, caracat_cfg.instance_id);
             } else {
                 probe_senders_map.insert(ip_key.clone(), tx_probe_to_sender.clone());
                 debug!(
-                    "Caracat sender registered for IP-specific targeting: {}",
-                    ip_key
+                    "Caracat sender registered for IP-specific targeting: {} (Instance ID: {})",
+                    ip_key, caracat_cfg.instance_id
                 );
             }
         } else {
-            debug!("Caracat configuration for interface {} has no source IP. It can be the default sender if it's the first config.", caracat_cfg.interface);
+            debug!("Caracat configuration for interface {} (Instance ID: {}) has no source IP. It can be the default sender if it's the first config.", caracat_cfg.interface, caracat_cfg.instance_id);
         }
 
         SendLoop::new(
@@ -111,19 +109,51 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             current_tokio_handle.clone(),
         );
         debug!(
-            "Caracat sender instance started for interface {}",
-            caracat_cfg.interface
+            "Caracat SendLoop instance started for interface {} (Instance ID: {})",
+            caracat_cfg.interface, caracat_cfg.instance_id
+        );
+    }
+
+    // --- Setup ReceiveLoops (one per unique physical interface) ---
+    let mut unique_interfaces: HashMap<String, Vec<CaracatConfig>> = HashMap::new();
+    for caracat_cfg in &config.caracat {
+        unique_interfaces
+            .entry(caracat_cfg.interface.clone())
+            .or_default()
+            .push(caracat_cfg.clone());
+    }
+
+    for (interface_name, configs_for_interface) in unique_interfaces {
+        if configs_for_interface.is_empty() {
+            continue;
+        }
+        // All configs_for_interface share the same interface_name.
+        // We need to pass all relevant instance IDs for this physical interface.
+        let instance_ids_for_interface: Vec<u16> = configs_for_interface
+            .iter()
+            .map(|cfg| cfg.instance_id)
+            .collect();
+
+        // The ReceiveLoop will use the first config for basic settings like integrity_check,
+        // but it needs all instance_ids for demultiplexing.
+        // Or, you might define a "shared" config for the receiver if some params differ.
+        // For simplicity, let's assume the first config's integrity_check flag is representative.
+        let representative_cfg = configs_for_interface[0].clone(); // Used for general receiver settings
+
+        info!(
+            "Initializing ReceiveLoop for physical interface: {} (Associated Instance IDs: {:?})",
+            interface_name, instance_ids_for_interface
         );
 
         ReceiveLoop::new(
-            tx_async_reply_to_producer.clone(),
+            tx_async_reply_to_producer.clone(), // All receivers send to the same producer channel
             config.agent.id.clone(),
-            caracat_cfg.clone(),
+            representative_cfg, // Use the first config for basic settings
             current_tokio_handle.clone(),
         );
         debug!(
-            "Caracat receiver started for interface {}",
-            caracat_cfg.interface
+            "Caracat ReceiveLoop started for physical interface {}",
+            interface_name
         );
     }
 
@@ -150,7 +180,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             producer::produce(
                 &producer_config,
                 producer_auth_clone,
-                rx_async_reply_for_producer,
+                rx_async_reply_for_producer, // Single receiver for all replies
             )
             .await
         });
@@ -169,8 +199,6 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     );
 
     // -- Start the main loop --
-    // This loop will continuously receive messages from Kafka, deserialize probes, and send them to the appropriate Caracat sender.
-    // In parallel, the Caracat receivers will send the replies to Kafka producer.
     loop {
         let message = match consumer.recv().await {
             Ok(m) => m,
@@ -201,6 +229,8 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
         if let Some(headers) = message.headers() {
             for header in headers.iter() {
+                // Logic for X-Sender-IP was in the original code for determine_target_sender
+                // The agent ID check was:
                 if header.key == config.agent.id {
                     is_intended_for_this_agent = true;
                     sender_ip_from_header = match header.value {
@@ -211,7 +241,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             }
         }
 
-        if !is_intended_for_this_agent {
+        if !is_intended_for_this_agent && !config.caracat.is_empty() {
             debug!(
                 "Message not intended for this agent (ID: {}). Ignored.",
                 config.agent.id
@@ -281,7 +311,10 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             }
         } else {
             if !probes_to_send.is_empty() {
-                debug!("Probes not sent as no target sender could be determined.");
+                warn!(
+                    "Probes not sent as no target Caracat sender could be determined (X-Sender-IP: {:?}).",
+                    sender_ip_from_header
+                );
             }
         }
 

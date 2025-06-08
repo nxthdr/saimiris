@@ -27,7 +27,7 @@ impl ReceiveLoop {
         let stopped_thr = stopped.clone();
 
         let metrics_labels = vec![Label::new("agent", agent_id.to_string())];
-        let interface_name = config.interface.clone(); // Clone for logging
+        let interface_name = config.interface.clone();
 
         let thread_runtime_handle = runtime_handle.clone();
 
