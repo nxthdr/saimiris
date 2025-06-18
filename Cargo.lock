@@ -2110,9 +2110,6 @@ dependencies = [
  "bitflags 2.6.0",
  "errno 0.3.11",
  "libc",
-<<<<<<< HEAD
- "linux-raw-sys",
-=======
  "linux-raw-sys 0.4.15",
  "windows-sys 0.59.0",
 ]
@@ -2127,7 +2124,6 @@ dependencies = [
  "errno 0.3.11",
  "libc",
  "linux-raw-sys 0.9.4",
->>>>>>> b3b96e9 (integrate optional gateway registration and helthcheck)
  "windows-sys 0.59.0",
 ]
 

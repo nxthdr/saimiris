@@ -1,7 +1,6 @@
 use anyhow::Result;
-use caracat::rate_limiter::RateLimitingMethod;
 use config::Config;
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::net::lookup_host;
 
@@ -22,14 +21,18 @@ fn default_agent_secret() -> Option<String> {
     None
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct RawAgentConfig {
     #[serde(default = "default_agent_id")]
     pub id: String,
     #[serde(default = "default_agent_metrics_address_str")]
     pub metrics_address: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct GatewayConfig {
     #[serde(default = "default_agent_gateway_url")]
-    pub gateway_url: Option<String>,
+    pub url: Option<String>,
     #[serde(default = "default_agent_key")]
     pub agent_key: Option<String>,
     #[serde(default = "default_agent_secret")]
@@ -37,85 +40,7 @@ pub struct RawAgentConfig {
 }
 
 // --- CaracatConfig ---
-fn default_caracat_batch_size() -> u64 {
-    100
-}
-fn default_caracat_instance_id() -> u16 {
-    0
-}
-fn default_caracat_interface() -> String {
-    caracat::utilities::get_default_interface()
-}
-fn default_caracat_packets() -> u64 {
-    1
-}
-fn default_caracat_probing_rate() -> u64 {
-    100
-}
-fn default_caracat_rate_limiting_method() -> RateLimitingMethod {
-    RateLimitingMethod::Auto
-}
-
-fn deserialize_rate_limiting_method<'de, D>(deserializer: D) -> Result<RateLimitingMethod, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    match s.to_lowercase().as_str() {
-        "auto" => Ok(RateLimitingMethod::Auto),
-        "active" => Ok(RateLimitingMethod::Active),
-        "sleep" => Ok(RateLimitingMethod::Sleep),
-        "none" => Ok(RateLimitingMethod::None),
-        _ => Err(de::Error::unknown_variant(
-            &s,
-            &["auto", "active", "sleep", "none"],
-        )),
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SerializableRateLimitingMethod {
-    Auto,
-    Active,
-    Sleep,
-    None,
-}
-
-impl From<RateLimitingMethod> for SerializableRateLimitingMethod {
-    fn from(method: RateLimitingMethod) -> Self {
-        match method {
-            RateLimitingMethod::Auto => SerializableRateLimitingMethod::Auto,
-            RateLimitingMethod::Active => SerializableRateLimitingMethod::Active,
-            RateLimitingMethod::Sleep => SerializableRateLimitingMethod::Sleep,
-            RateLimitingMethod::None => SerializableRateLimitingMethod::None,
-        }
-    }
-}
-
-impl From<&RateLimitingMethod> for SerializableRateLimitingMethod {
-    fn from(method: &RateLimitingMethod) -> Self {
-        match method {
-            RateLimitingMethod::Auto => SerializableRateLimitingMethod::Auto,
-            RateLimitingMethod::Active => SerializableRateLimitingMethod::Active,
-            RateLimitingMethod::Sleep => SerializableRateLimitingMethod::Sleep,
-            RateLimitingMethod::None => SerializableRateLimitingMethod::None,
-        }
-    }
-}
-
-impl From<SerializableRateLimitingMethod> for RateLimitingMethod {
-    fn from(method: SerializableRateLimitingMethod) -> Self {
-        match method {
-            SerializableRateLimitingMethod::Auto => RateLimitingMethod::Auto,
-            SerializableRateLimitingMethod::Active => RateLimitingMethod::Active,
-            SerializableRateLimitingMethod::Sleep => RateLimitingMethod::Sleep,
-            SerializableRateLimitingMethod::None => RateLimitingMethod::None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CaracatConfig {
     #[serde(default = "default_caracat_batch_size")]
     pub batch_size: u64,
@@ -139,38 +64,28 @@ pub struct CaracatConfig {
     pub packets: u64,
     #[serde(default = "default_caracat_probing_rate")]
     pub probing_rate: u64,
-    #[serde(
-        default = "default_caracat_rate_limiting_method",
-        deserialize_with = "deserialize_rate_limiting_method"
-    )]
-    pub rate_limiting_method: RateLimitingMethod,
+    #[serde(default = "default_rate_limiting_method_string")]
+    pub rate_limiting_method: String,
 }
 
-// Custom Serialize for CaracatConfig to use the serializable wrapper
-impl Serialize for CaracatConfig {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("CaracatConfig", 12)?;
-        state.serialize_field("batch_size", &self.batch_size)?;
-        state.serialize_field("instance_id", &self.instance_id)?;
-        state.serialize_field("dry_run", &self.dry_run)?;
-        state.serialize_field("min_ttl", &self.min_ttl)?;
-        state.serialize_field("max_ttl", &self.max_ttl)?;
-        state.serialize_field("integrity_check", &self.integrity_check)?;
-        state.serialize_field("interface", &self.interface)?;
-        state.serialize_field("src_ipv4_addr", &self.src_ipv4_addr)?;
-        state.serialize_field("src_ipv6_addr", &self.src_ipv6_addr)?;
-        state.serialize_field("packets", &self.packets)?;
-        state.serialize_field("probing_rate", &self.probing_rate)?;
-        state.serialize_field(
-            "rate_limiting_method",
-            &SerializableRateLimitingMethod::from(&self.rate_limiting_method),
-        )?;
-        state.end()
-    }
+fn default_rate_limiting_method_string() -> String {
+    "auto".to_string()
+}
+
+fn default_caracat_batch_size() -> u64 {
+    100
+}
+fn default_caracat_instance_id() -> u16 {
+    0
+}
+fn default_caracat_interface() -> String {
+    "eth0".to_string()
+}
+fn default_caracat_packets() -> u64 {
+    1
+}
+fn default_caracat_probing_rate() -> u64 {
+    100
 }
 
 // --- KafkaConfig ---
@@ -211,7 +126,7 @@ fn default_kafka_out_batch_wait_interval() -> u64 {
     100
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct KafkaConfig {
     #[serde(default = "default_kafka_brokers")]
     pub brokers: String,
@@ -245,6 +160,8 @@ pub struct RawAppConfig {
     #[serde(default)]
     agent: RawAgentConfig,
     #[serde(default)]
+    gateway: Option<GatewayConfig>,
+    #[serde(default)]
     caracat: Vec<CaracatConfig>,
     #[serde(default)]
     kafka: KafkaConfig,
@@ -253,6 +170,7 @@ pub struct RawAppConfig {
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub agent: AgentConfig,
+    pub gateway: Option<GatewayConfig>,
     pub caracat: Vec<CaracatConfig>,
     pub kafka: KafkaConfig,
 }
@@ -261,9 +179,6 @@ pub struct AppConfig {
 pub struct AgentConfig {
     pub id: String,
     pub metrics_address: SocketAddr,
-    pub gateway_url: Option<String>,
-    pub agent_key: Option<String>,
-    pub agent_secret: Option<String>,
 }
 
 // --- Loading ---
@@ -297,65 +212,19 @@ pub async fn app_config(config_path: &str) -> Result<AppConfig> {
         raw_config.caracat
     };
 
+    let gateway = raw_config.gateway.map(|g| GatewayConfig {
+        url: g.url,
+        agent_key: g.agent_key,
+        agent_secret: g.agent_secret,
+    });
+
     Ok(AppConfig {
         agent: AgentConfig {
             id: raw_config.agent.id,
             metrics_address: resolved_metrics_address,
-            gateway_url: raw_config.agent.gateway_url,
-            agent_key: raw_config.agent.agent_key,
-            agent_secret: raw_config.agent.agent_secret,
         },
+        gateway,
         caracat: caracat_configs,
         kafka: raw_config.kafka,
     })
-}
-
-impl Default for CaracatConfig {
-    fn default() -> Self {
-        Self {
-            batch_size: default_caracat_batch_size(),
-            instance_id: default_caracat_instance_id(),
-            dry_run: false,
-            min_ttl: None,
-            max_ttl: None,
-            integrity_check: false,
-            interface: default_caracat_interface(),
-            src_ipv4_addr: None,
-            src_ipv6_addr: None,
-            packets: default_caracat_packets(),
-            probing_rate: default_caracat_probing_rate(),
-            rate_limiting_method: default_caracat_rate_limiting_method(),
-        }
-    }
-}
-
-impl Default for RawAgentConfig {
-    fn default() -> Self {
-        Self {
-            id: default_agent_id(),
-            metrics_address: default_agent_metrics_address_str(),
-            gateway_url: default_agent_gateway_url(),
-            agent_key: default_agent_key(),
-            agent_secret: default_agent_secret(),
-        }
-    }
-}
-
-impl Default for KafkaConfig {
-    fn default() -> Self {
-        Self {
-            brokers: default_kafka_brokers(),
-            auth_protocol: default_kafka_auth_protocol(),
-            auth_sasl_username: default_kafka_auth_sasl_username(),
-            auth_sasl_password: default_kafka_auth_sasl_password(),
-            auth_sasl_mechanism: default_kafka_auth_sasl_mechanism(),
-            message_max_bytes: default_kafka_message_max_bytes(),
-            in_topics: default_kafka_in_topics(),
-            in_group_id: default_kafka_in_group_id(),
-            out_enable: default_kafka_out_enable(),
-            out_topic: default_kafka_out_topic(),
-            out_batch_wait_time: default_kafka_out_batch_wait_time(),
-            out_batch_wait_interval: default_kafka_out_batch_wait_interval(),
-        }
-    }
 }

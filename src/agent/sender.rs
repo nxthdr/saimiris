@@ -1,5 +1,6 @@
 use caracat::models::Probe;
 use caracat::rate_limiter::RateLimiter;
+use caracat::rate_limiter::RateLimitingMethod;
 use caracat::sender::Sender as CaracatSender;
 use metrics::counter;
 use metrics::Label;
@@ -24,11 +25,20 @@ impl SendLoop {
         config: CaracatConfig,
         runtime_handle: TokioHandle,
     ) -> Self {
-        let mut rate_limiter = RateLimiter::new(
-            config.probing_rate,
-            config.batch_size,
-            config.rate_limiting_method,
-        );
+        let method = match config.rate_limiting_method.to_lowercase().as_str() {
+            "auto" => RateLimitingMethod::Auto,
+            "active" => RateLimitingMethod::Active,
+            "sleep" => RateLimitingMethod::Sleep,
+            "none" => RateLimitingMethod::None,
+            other => {
+                error!(
+                    "Unknown rate_limiting_method '{}', defaulting to 'auto'",
+                    other
+                );
+                RateLimitingMethod::Auto
+            }
+        };
+        let mut rate_limiter = RateLimiter::new(config.probing_rate, config.batch_size, method);
 
         let stopped = Arc::new(Mutex::new(false));
         let stopped_thr = stopped.clone();

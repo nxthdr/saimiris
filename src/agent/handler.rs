@@ -51,33 +51,33 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     info!("Agent ID: {}", config.agent.id);
 
     // --- Gateway registration and health reporting ---
-    if let (Some(gateway_url), Some(agent_key), Some(agent_secret)) = (
-        &config.agent.gateway_url,
-        &config.agent.agent_key,
-        &config.agent.agent_secret,
-    ) {
-        let client = Client::new();
-        register_agent(
-            &client,
-            gateway_url,
-            &config.agent.id,
-            agent_key,
-            agent_secret,
-        )
-        .await?;
-        send_agent_config(
-            &client,
-            gateway_url,
-            &config.agent.id,
-            agent_key,
-            &config.caracat[0],
-        )
-        .await?;
-        spawn_healthcheck_loop(
-            gateway_url.clone(),
-            config.agent.id.clone(),
-            agent_key.clone(),
-        );
+    if let Some(gateway) = &config.gateway {
+        if let (Some(gateway_url), Some(agent_key), Some(agent_secret)) =
+            (&gateway.url, &gateway.agent_key, &gateway.agent_secret)
+        {
+            let client = Client::new();
+            register_agent(
+                &client,
+                gateway_url,
+                &config.agent.id,
+                agent_key,
+                agent_secret,
+            )
+            .await?;
+            send_agent_config(
+                &client,
+                gateway_url,
+                &config.agent.id,
+                agent_key,
+                &config.caracat[0],
+            )
+            .await?;
+            spawn_healthcheck_loop(
+                gateway_url.clone(),
+                config.agent.id.clone(),
+                agent_key.clone(),
+            );
+        }
     }
 
     let current_tokio_handle = TokioHandle::current();
