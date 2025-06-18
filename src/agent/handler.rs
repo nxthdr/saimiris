@@ -3,6 +3,7 @@ use caracat::models::{Probe, Reply};
 use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
 use rdkafka::message::Headers;
 use rdkafka::Message;
+use reqwest::Client;
 use std::collections::HashMap;
 use tokio::runtime::Handle as TokioHandle;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -10,6 +11,7 @@ use tokio::task::spawn;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::agent::consumer::init_consumer;
+use crate::agent::gateway::{register_agent, send_agent_config, spawn_healthcheck_loop};
 use crate::agent::producer;
 use crate::agent::receiver::ReceiveLoop;
 use crate::agent::sender::SendLoop;
@@ -17,7 +19,7 @@ use crate::auth::{KafkaAuth, SaslAuth};
 use crate::config::{AppConfig, CaracatConfig};
 use crate::probe::deserialize_probes;
 
-fn determine_target_sender(
+pub fn determine_target_sender(
     probe_senders_map: &HashMap<String, Sender<Vec<Probe>>>,
     sender_ip_from_header: Option<&String>,
     default_sender_channel: Option<&Sender<Vec<Probe>>>,
@@ -47,6 +49,36 @@ fn determine_target_sender(
 pub async fn handle(config: &AppConfig) -> Result<()> {
     trace!("Agent handler");
     info!("Agent ID: {}", config.agent.id);
+
+    // --- Gateway registration and health reporting ---
+    if let (Some(gateway_url), Some(agent_key), Some(agent_secret)) = (
+        &config.agent.gateway_url,
+        &config.agent.agent_key,
+        &config.agent.agent_secret,
+    ) {
+        let client = Client::new();
+        register_agent(
+            &client,
+            gateway_url,
+            &config.agent.id,
+            agent_key,
+            agent_secret,
+        )
+        .await?;
+        send_agent_config(
+            &client,
+            gateway_url,
+            &config.agent.id,
+            agent_key,
+            &config.caracat[0],
+        )
+        .await?;
+        spawn_healthcheck_loop(
+            gateway_url.clone(),
+            config.agent.id.clone(),
+            agent_key.clone(),
+        );
+    }
 
     let current_tokio_handle = TokioHandle::current();
 
