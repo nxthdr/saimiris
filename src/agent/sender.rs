@@ -9,6 +9,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use tokio::runtime::Handle as TokioHandle;
 use tokio::sync::mpsc::Receiver as TokioReceiver;
+use tracing::warn;
 use tracing::{debug, error, info, trace};
 
 use crate::config::CaracatConfig;
@@ -31,7 +32,7 @@ impl SendLoop {
             "sleep" => RateLimitingMethod::Sleep,
             "none" => RateLimitingMethod::None,
             other => {
-                error!(
+                warn!(
                     "Unknown rate_limiting_method '{}', defaulting to 'auto'",
                     other
                 );
@@ -70,11 +71,12 @@ impl SendLoop {
                     if let Ok(mut s_lock) = stopped_thr.lock() {
                         *s_lock = true;
                     }
-                    // Consider sending feedback if the channel is still valid, though it might also fail.
-                    // thread_runtime_handle.block_on(feedback.send(false)).ok(); // Example: signal failure
                     return;
                 }
             };
+
+            // Extra logging for debugging SendLoop lifecycle
+            info!("SendLoop for interface {} is running.", config.interface);
 
             loop {
                 if *stopped_thr.lock().unwrap() {
@@ -82,11 +84,10 @@ impl SendLoop {
                     break;
                 }
 
-                // Use the passed runtime handle
                 let probes = match thread_runtime_handle.block_on(rx.recv()) {
                     Some(p) => p,
                     None => {
-                        info!(
+                        error!(
                             "Probe channel closed for SendLoop on interface {}. Exiting loop.",
                             config.interface
                         );

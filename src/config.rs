@@ -4,39 +4,45 @@ use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::net::lookup_host;
 
-// --- AgentConfig ---
-fn default_agent_id() -> String {
-    "".to_string()
-}
-fn default_agent_metrics_address_str() -> String {
-    "0.0.0.0:8080".to_string()
-}
-fn default_agent_gateway_url() -> Option<String> {
-    None
-}
-fn default_agent_key() -> Option<String> {
-    None
-}
-fn default_agent_secret() -> Option<String> {
-    None
-}
+// --- Constants ---
+const DEFAULT_AGENT_METRICS_ADDRESS: &str = "0.0.0.0:8080";
+const DEFAULT_CARACAT_BATCH_SIZE: u64 = 100;
+const DEFAULT_CARACAT_INSTANCE_ID: u16 = 0;
+const DEFAULT_CARACAT_PACKETS: u64 = 1;
+const DEFAULT_CARACAT_PROBING_RATE: u64 = 100;
+const DEFAULT_RATE_LIMITING_METHOD: &str = "auto";
+const DEFAULT_KAFKA_BROKERS: &str = "localhost:9092";
+const DEFAULT_KAFKA_AUTH_PROTOCOL: &str = "PLAINTEXT";
+const DEFAULT_KAFKA_AUTH_SASL_USERNAME: &str = "saimiris";
+const DEFAULT_KAFKA_AUTH_SASL_PASSWORD: &str = "saimiris";
+const DEFAULT_KAFKA_AUTH_SASL_MECHANISM: &str = "SCRAM-SHA-512";
+const DEFAULT_KAFKA_MESSAGE_MAX_BYTES: usize = 990_000;
+const DEFAULT_KAFKA_IN_TOPICS: &str = "saimiris-targets";
+const DEFAULT_KAFKA_IN_GROUP_ID: &str = "saimiris-agent";
+const DEFAULT_KAFKA_OUT_TOPIC: &str = "saimiris-results";
+const DEFAULT_KAFKA_OUT_BATCH_WAIT_TIME: u64 = 1000;
+const DEFAULT_KAFKA_OUT_BATCH_WAIT_INTERVAL: u64 = 100;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct RawAgentConfig {
-    #[serde(default = "default_agent_id")]
+    #[serde(default)]
     pub id: String,
-    #[serde(default = "default_agent_metrics_address_str")]
+    #[serde(default = "default_agent_metrics_address")]
     pub metrics_address: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GatewayConfig {
-    #[serde(default = "default_agent_gateway_url")]
+    #[serde(default)]
     pub url: Option<String>,
-    #[serde(default = "default_agent_key")]
+    #[serde(default)]
     pub agent_key: Option<String>,
-    #[serde(default = "default_agent_secret")]
+    #[serde(default)]
     pub agent_secret: Option<String>,
+}
+
+fn default_agent_metrics_address() -> String {
+    DEFAULT_AGENT_METRICS_ADDRESS.to_string()
 }
 
 // --- CaracatConfig ---
@@ -64,66 +70,66 @@ pub struct CaracatConfig {
     pub packets: u64,
     #[serde(default = "default_caracat_probing_rate")]
     pub probing_rate: u64,
-    #[serde(default = "default_rate_limiting_method_string")]
+    #[serde(default = "default_rate_limiting_method")]
     pub rate_limiting_method: String,
 }
 
-fn default_rate_limiting_method_string() -> String {
-    "auto".to_string()
+fn default_rate_limiting_method() -> String {
+    DEFAULT_RATE_LIMITING_METHOD.to_string()
 }
 
 fn default_caracat_batch_size() -> u64 {
-    100
+    DEFAULT_CARACAT_BATCH_SIZE
 }
 fn default_caracat_instance_id() -> u16 {
-    0
+    DEFAULT_CARACAT_INSTANCE_ID
 }
 fn default_caracat_interface() -> String {
-    "eth0".to_string()
+    caracat::utilities::get_default_interface()
 }
 fn default_caracat_packets() -> u64 {
-    1
+    DEFAULT_CARACAT_PACKETS
 }
 fn default_caracat_probing_rate() -> u64 {
-    100
+    DEFAULT_CARACAT_PROBING_RATE
 }
 
 // --- KafkaConfig ---
 fn default_kafka_brokers() -> String {
-    "localhost:9092".to_string()
+    DEFAULT_KAFKA_BROKERS.to_string()
 }
 fn default_kafka_auth_protocol() -> String {
-    "PLAINTEXT".to_string()
+    DEFAULT_KAFKA_AUTH_PROTOCOL.to_string()
 }
 fn default_kafka_auth_sasl_username() -> String {
-    "saimiris".to_string()
+    DEFAULT_KAFKA_AUTH_SASL_USERNAME.to_string()
 }
 fn default_kafka_auth_sasl_password() -> String {
-    "saimiris".to_string()
+    DEFAULT_KAFKA_AUTH_SASL_PASSWORD.to_string()
 }
 fn default_kafka_auth_sasl_mechanism() -> String {
-    "SCRAM-SHA-512".to_string()
+    DEFAULT_KAFKA_AUTH_SASL_MECHANISM.to_string()
 }
 fn default_kafka_message_max_bytes() -> usize {
-    990_000
+    DEFAULT_KAFKA_MESSAGE_MAX_BYTES
 }
 fn default_kafka_in_topics() -> String {
-    "saimiris-targets".to_string()
+    DEFAULT_KAFKA_IN_TOPICS.to_string()
 }
 fn default_kafka_in_group_id() -> String {
-    "saimiris-agent".to_string()
+    DEFAULT_KAFKA_IN_GROUP_ID.to_string()
 }
 fn default_kafka_out_enable() -> bool {
     true
 }
 fn default_kafka_out_topic() -> String {
-    "saimiris-results".to_string()
+    DEFAULT_KAFKA_OUT_TOPIC.to_string()
 }
 fn default_kafka_out_batch_wait_time() -> u64 {
-    1000
+    DEFAULT_KAFKA_OUT_BATCH_WAIT_TIME
 }
 fn default_kafka_out_batch_wait_interval() -> u64 {
-    100
+    DEFAULT_KAFKA_OUT_BATCH_WAIT_INTERVAL
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -206,17 +212,35 @@ pub async fn app_config(config_path: &str) -> Result<AppConfig> {
         resolve_address(raw_config.agent.metrics_address.clone()).await?;
 
     // use default caracat config if not provided
-    let caracat_configs = if raw_config.caracat.is_empty() {
+    let mut caracat_configs = if raw_config.caracat.is_empty() {
         vec![CaracatConfig::default()]
     } else {
         raw_config.caracat
     };
 
-    let gateway = raw_config.gateway.map(|g| GatewayConfig {
-        url: g.url,
-        agent_key: g.agent_key,
-        agent_secret: g.agent_secret,
-    });
+    // Validate CaracatConfig fields for each caracat config
+    for cfg in &mut caracat_configs {
+        if cfg.batch_size == 0 {
+            cfg.batch_size = default_caracat_batch_size();
+        }
+        if cfg.instance_id == 0 {
+            cfg.instance_id = default_caracat_instance_id();
+        }
+        if cfg.interface.is_empty() {
+            cfg.interface = default_caracat_interface();
+        }
+        if cfg.packets == 0 {
+            cfg.packets = default_caracat_packets();
+        }
+        if cfg.probing_rate == 0 {
+            cfg.probing_rate = default_caracat_probing_rate();
+        }
+        if cfg.rate_limiting_method.is_empty() {
+            cfg.rate_limiting_method = default_rate_limiting_method();
+        }
+    }
+
+    let gateway = raw_config.gateway;
 
     Ok(AppConfig {
         agent: AgentConfig {
