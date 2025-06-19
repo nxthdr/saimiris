@@ -16,7 +16,8 @@ pub async fn register_agent(client: &Client, gateway_url: &str, agent_id: &str, 
         .header("authorization", format!("Bearer {}", agent_key))
         .json(&register_body)
         .send()
-        .await?;
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to send registration request to {}: {}", register_url, e))?;
     if resp.status().is_success() {
         info!("Successfully registered agent with gateway");
     } else if resp.status() == reqwest::StatusCode::CONFLICT {
@@ -35,7 +36,8 @@ pub async fn send_agent_config(client: &Client, gateway_url: &str, agent_id: &st
         .header("authorization", format!("Bearer {}", agent_key))
         .json(caracat_config)
         .send()
-        .await?;
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to send config request to {}: {}", config_url, e))?;
     if resp.status().is_success() {
         info!("Agent config sent to gateway");
     } else {

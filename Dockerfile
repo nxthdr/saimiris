@@ -16,7 +16,8 @@ RUN cargo build --release --bin saimiris
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
-    && apt-get install -y libpcap-dev libsasl2-dev libssl-dev \
+    && apt-get install -y libpcap-dev libsasl2-dev libssl-dev ca-certificates \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/saimiris /app/saimiris
 
