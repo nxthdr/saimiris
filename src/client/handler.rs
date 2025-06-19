@@ -9,7 +9,7 @@ use crate::auth::{KafkaAuth, SaslAuth};
 use crate::client::producer::produce;
 use crate::config::AppConfig;
 
-fn read_probes_from_csv<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
+pub fn read_probes_from_csv<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
     let probes = Vec::new();
     let mut rdr = ReaderBuilder::new()
         .has_headers(false)

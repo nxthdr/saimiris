@@ -1,5 +1,6 @@
 mod consumer;
-mod handler;
+mod gateway;
+pub mod handler;
 mod producer;
 mod receiver;
 mod sender;

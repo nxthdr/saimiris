@@ -9,7 +9,7 @@ use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
 use crate::probe::serialize_probe;
 
-fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<Vec<u8>> {
+pub fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<Vec<u8>> {
     let mut messages = Vec::new();
     let mut current_message = Vec::new();
     for probe in probes {
