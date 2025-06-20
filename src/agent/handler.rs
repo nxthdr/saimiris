@@ -69,7 +69,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 gateway_url,
                 &config.agent.id,
                 agent_key,
-                &config.caracat[0],
+                &config.caracat,
             )
             .await?;
             spawn_healthcheck_loop(

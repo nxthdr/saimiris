@@ -2,11 +2,21 @@ use anyhow::Result;
 use reqwest::Client;
 use tokio::task::spawn;
 use tokio::time::{sleep, Duration};
-use tracing::{info, error};
+use tracing::{error, info};
+
 use crate::config::CaracatConfig;
 
-pub async fn register_agent(client: &Client, gateway_url: &str, agent_id: &str, agent_key: &str, agent_secret: &str) -> Result<()> {
-    let register_url = format!("{}/agent-api/agent/register", gateway_url.trim_end_matches('/'));
+pub async fn register_agent(
+    client: &Client,
+    gateway_url: &str,
+    agent_id: &str,
+    agent_key: &str,
+    agent_secret: &str,
+) -> Result<()> {
+    let register_url = format!(
+        "{}/agent-api/agent/register",
+        gateway_url.trim_end_matches('/')
+    );
     let register_body = serde_json::json!({
         "id": agent_id,
         "secret": agent_secret
@@ -17,27 +27,45 @@ pub async fn register_agent(client: &Client, gateway_url: &str, agent_id: &str, 
         .json(&register_body)
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to send registration request to {}: {}", register_url, e))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to send registration request to {}: {}",
+                register_url,
+                e
+            )
+        })?;
     if resp.status().is_success() {
         info!("Successfully registered agent with gateway");
     } else if resp.status() == reqwest::StatusCode::CONFLICT {
         info!("Agent already registered at gateway");
     } else {
         error!("Failed to register agent: {}", resp.status());
-        return Err(anyhow::anyhow!("Failed to register agent: {}", resp.status()));
+        return Err(anyhow::anyhow!(
+            "Failed to register agent: {}",
+            resp.status()
+        ));
     }
     Ok(())
 }
 
-pub async fn send_agent_config(client: &Client, gateway_url: &str, agent_id: &str, agent_key: &str, caracat_config: &CaracatConfig) -> Result<()> {
-    let config_url = format!("{}/agent-api/agent/{}/config", gateway_url.trim_end_matches('/'), agent_id);
+pub async fn send_agent_config(
+    client: &Client,
+    gateway_url: &str,
+    agent_id: &str,
+    agent_key: &str,
+    caracat_configs: &[CaracatConfig],
+) -> Result<()> {
+    let config_url = format!(
+        "{}/agent-api/agent/{}/config",
+        gateway_url.trim_end_matches('/'),
+        agent_id
+    );
     let resp = client
         .post(&config_url)
         .header("authorization", format!("Bearer {}", agent_key))
-        .json(caracat_config)
+        .json(caracat_configs)
         .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to send config request to {}: {}", config_url, e))?;
+        .await?;
     if resp.status().is_success() {
         info!("Agent config sent to gateway");
     } else {
