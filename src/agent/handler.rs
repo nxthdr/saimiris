@@ -76,6 +76,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 gateway_url.clone(),
                 config.agent.id.clone(),
                 agent_key.clone(),
+                config.caracat.clone(),
             );
         }
     }
