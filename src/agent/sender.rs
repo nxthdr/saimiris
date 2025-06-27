@@ -47,19 +47,19 @@ impl SendLoop {
 
         let metrics_labels = vec![Label::new("agent", agent_id.to_string())];
 
-        let caracat_sender_result = CaracatSender::new(
-            &config.interface,
-            config.src_ipv4_addr,
-            config.src_ipv6_addr,
-            config.instance_id,
-            config.dry_run,
-        );
-
         // Clone the handle to move into the thread
         let thread_runtime_handle = runtime_handle.clone();
 
         let handle = thread::spawn(move || {
             debug!("SendLoop thread started for interface: {}", interface_name);
+
+            let caracat_sender_result = CaracatSender::new(
+                &config.interface,
+                config.src_ipv4_addr,
+                config.src_ipv6_addr,
+                config.instance_id,
+                config.dry_run,
+            );
 
             let mut caracat_sender = match caracat_sender_result {
                 Ok(s) => s,

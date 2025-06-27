@@ -89,6 +89,11 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         );
     }
 
+    info!(
+        "Found {} Caracat configurations. Initializing SendLoops and ReceiveLoops.",
+        config.caracat.len()
+    );
+
     // Channel for all replies from all ReceiveLoops to the single Kafka producer
     let (tx_async_reply_to_producer, rx_async_reply_for_producer): (
         Sender<Reply>,
@@ -135,7 +140,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             debug!("Caracat configuration for interface {} (Instance ID: {}) has no source IP. It can be the default sender if it's the first config.", caracat_cfg.interface, caracat_cfg.instance_id);
         }
 
-        SendLoop::new(
+        let _send_loop = SendLoop::new(
             rx_probes_for_sender,
             config.agent.id.clone(),
             caracat_cfg.clone(),
@@ -155,6 +160,11 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             .or_default()
             .push(caracat_cfg.clone());
     }
+
+    info!(
+        "Found {} unique physical interfaces for Caracat configurations.",
+        unique_interfaces.len()
+    );
 
     for (interface_name, configs_for_interface) in unique_interfaces {
         if configs_for_interface.is_empty() {
@@ -178,7 +188,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             interface_name, instance_ids_for_interface
         );
 
-        ReceiveLoop::new(
+        let _receive_loop = ReceiveLoop::new(
             tx_async_reply_to_producer.clone(), // All receivers send to the same producer channel
             config.agent.id.clone(),
             representative_cfg, // Use the first config for basic settings
