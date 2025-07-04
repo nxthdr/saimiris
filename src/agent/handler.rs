@@ -3,7 +3,6 @@ use caracat::models::{Probe, Reply};
 use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
 use rdkafka::message::Headers;
 use rdkafka::Message;
-use reqwest::Client;
 use std::collections::HashMap;
 use tokio::runtime::Handle as TokioHandle;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -11,7 +10,7 @@ use tokio::task::spawn;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::agent::consumer::init_consumer;
-use crate::agent::gateway::{register_agent, send_agent_config, spawn_healthcheck_loop};
+use crate::agent::gateway::spawn_healthcheck_loop;
 use crate::agent::producer;
 use crate::agent::receiver::ReceiveLoop;
 use crate::agent::sender::SendLoop;
@@ -55,27 +54,11 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         if let (Some(gateway_url), Some(agent_key), Some(agent_secret)) =
             (&gateway.url, &gateway.agent_key, &gateway.agent_secret)
         {
-            let client = Client::new();
-            register_agent(
-                &client,
-                gateway_url,
-                &config.agent.id,
-                agent_key,
-                agent_secret,
-            )
-            .await?;
-            send_agent_config(
-                &client,
-                gateway_url,
-                &config.agent.id,
-                agent_key,
-                &config.caracat,
-            )
-            .await?;
             spawn_healthcheck_loop(
                 gateway_url.clone(),
                 config.agent.id.clone(),
                 agent_key.clone(),
+                agent_secret.clone(),
                 config.caracat.clone(),
             );
         }
