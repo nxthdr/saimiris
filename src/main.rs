@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::{error, trace};
 
-use crate::config::app_config;
+use crate::config::{app_config, parse_and_validate_client_args};
 
 #[derive(Debug, Parser)]
 #[clap(name = "Saimiris", version)]
@@ -143,9 +143,14 @@ async fn main() -> Result<()> {
                 ::std::process::exit(2);
             }
 
+            // Parse and validate client arguments
+            let client_config =
+                parse_and_validate_client_args(&agents, agent_src_ips, probes_file)?;
+
             let app_config = app_config(&config).await?;
             trace!("{:?}", app_config);
-            match client::handle(&app_config, &agents, agent_src_ips, probes_file).await {
+
+            match client::handle(&app_config, client_config).await {
                 Ok(_) => (),
                 Err(e) => error!("Error: {}", e),
             }

@@ -254,17 +254,35 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         let mut sender_ip_from_header: Option<String> = None;
 
         if let Some(headers) = message.headers() {
+            debug!("Message has {} headers", headers.count());
             for header in headers.iter() {
-                // Logic for X-Sender-IP was in the original code for determine_target_sender
-                // The agent ID check was:
+                debug!(
+                    "Header: key='{}', value_len={}",
+                    header.key,
+                    header.value.map(|v| v.len()).unwrap_or(0)
+                );
                 if header.key == config.agent.id {
+                    debug!("Found header for agent ID: {}", config.agent.id);
                     is_intended_for_this_agent = true;
-                    sender_ip_from_header = match header.value {
-                        Some(value_bytes) => String::from_utf8(value_bytes.to_vec()).ok(),
-                        None => None,
-                    };
+                    if let Some(value_bytes) = header.value {
+                        // Parse the JSON header value to extract src_ip
+                        if let Ok(header_str) = String::from_utf8(value_bytes.to_vec()) {
+                            if let Ok(agent_info) =
+                                serde_json::from_str::<serde_json::Value>(&header_str)
+                            {
+                                // Extract src_ip from the JSON
+                                sender_ip_from_header = agent_info
+                                    .get("src_ip")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                debug!("Extracted src_ip: {:?}", sender_ip_from_header);
+                            }
+                        }
+                    }
                 }
             }
+        } else {
+            debug!("Message has no headers");
         }
 
         if !is_intended_for_this_agent && !config.caracat.is_empty() {
@@ -279,6 +297,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         }
 
         info!("Message intended for this agent. Processing probes.");
+
         let probes_to_send = match deserialize_probes(payload_bytes.to_vec()) {
             Ok(probes) if probes.is_empty() => {
                 debug!("No probes to send after deserialization (empty list). Ignored.");

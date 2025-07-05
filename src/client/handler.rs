@@ -2,12 +2,11 @@ use anyhow::Result;
 use caracat::models::Probe;
 use csv::ReaderBuilder;
 use std::io::{stdin, BufRead};
-use std::path::PathBuf;
 use tracing::trace;
 
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::client::producer::produce;
-use crate::config::AppConfig;
+use crate::config::{AppConfig, ClientConfig};
 
 pub fn read_probes_from_csv<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
     let probes = Vec::new();
@@ -30,12 +29,7 @@ pub fn read_probes_from_csv<R: BufRead>(buf_reader: R) -> Result<Vec<Probe>> {
     )
 }
 
-pub async fn handle(
-    config: &AppConfig,
-    agents: &str,
-    agent_src_ips: Option<String>,
-    probes_file: Option<PathBuf>,
-) -> Result<()> {
+pub async fn handle(config: &AppConfig, client_config: ClientConfig) -> Result<()> {
     trace!("Client handler");
     trace!("{:?}", config);
 
@@ -55,7 +49,7 @@ pub async fn handle(
     };
 
     // Read probes from file or stdin
-    let probes = match probes_file {
+    let probes = match client_config.probes_file {
         Some(probes_file) => {
             let file = std::fs::File::open(probes_file)?;
             let buf_reader = std::io::BufReader::new(file);
@@ -68,41 +62,8 @@ pub async fn handle(
         }
     };
 
-    // Split the agents
-    let agents = agents.split(',').map(String::from).collect::<Vec<String>>();
-
-    // Split the agent source IPs if provided
-    let agent_src_ips = match agent_src_ips {
-        Some(src_ips_str) => {
-            let parsed_ips: Vec<Option<String>> = src_ips_str
-                .split(',')
-                .map(str::trim) // Trim whitespace around each IP
-                .map(|s| {
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s.to_string())
-                    }
-                }) // Map empty strings to None and non-empty strings to Some(String)
-                .collect();
-
-            parsed_ips
-        }
-        None => {
-            // Construct a vector of None with the same length as agents
-            vec![None; agents.len()]
-        }
-    };
-
-    // Validate agent source IPs if provided
-    if agent_src_ips.len() != agents.len() {
-        return Err(anyhow::anyhow!(
-            "Number of agent source IPs must match the number of agents"
-        ));
-    }
-
     // Produce Kafka messages
-    produce(config, auth, agents, agent_src_ips, probes).await;
+    produce(config, auth, client_config.measurement_infos, probes).await;
 
     Ok(())
 }

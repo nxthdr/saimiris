@@ -2,12 +2,19 @@ use caracat::models::Probe;
 use rdkafka::config::ClientConfig;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::{FutureProducer, FutureRecord};
+use serde_json;
 use std::time::Duration;
 use tracing::{error, info};
 
 use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
 use crate::probe::serialize_probe;
+
+#[derive(Debug, Clone)]
+pub struct MeasurementInfo {
+    pub name: String,
+    pub src_ip: Option<String>,
+}
 
 pub fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<Vec<u8>> {
     let mut messages = Vec::new();
@@ -34,8 +41,7 @@ pub fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<Vec<
 pub async fn produce(
     config: &AppConfig,
     auth: KafkaAuth,
-    agents: Vec<String>,
-    agent_src_ips: Vec<Option<String>>,
+    agents: Vec<MeasurementInfo>,
     probes: Vec<Probe>,
 ) {
     let producer: &FutureProducer = match auth {
@@ -59,10 +65,16 @@ pub async fn produce(
 
     // Construct headers
     let mut headers = OwnedHeaders::new();
-    for (agent, agent_src_ip) in agents.iter().zip(agent_src_ips) {
+    for agent in &agents {
+        // Serialize all agent info into a single header value
+        let agent_info_json = serde_json::json!({
+            "src_ip": agent.src_ip,
+        });
+        let agent_info_str = agent_info_json.to_string();
+
         headers = headers.insert(Header {
-            key: &agent,
-            value: agent_src_ip.as_ref(),
+            key: &agent.name,
+            value: Some(&agent_info_str),
         });
     }
 

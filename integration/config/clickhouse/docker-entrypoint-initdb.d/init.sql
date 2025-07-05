@@ -26,13 +26,13 @@ CREATE TABLE saimiris.from_kafka
 ENGINE = Kafka()
 SETTINGS
     kafka_broker_list = '10.0.0.100:9093',
-    kafka_topic_list = 'saimiris-results',
+    kafka_topic_list = 'saimiris-replies',
     kafka_group_name = 'clickhouse-saimiris-group',
     kafka_format = 'CapnProto',
     kafka_schema = 'reply.capnp:Reply',
     kafka_max_rows_per_message = 1048576;
 
-CREATE TABLE saimiris.results
+CREATE TABLE saimiris.replies
 (
     date Date,
 	time_inserted_ns DateTime64(9),
@@ -72,7 +72,7 @@ ORDER BY (
 PARTITION BY date
 TTL date + INTERVAL 7 DAY DELETE;
 
-CREATE MATERIALIZED VIEW saimiris.from_kafka_mv TO saimiris.results
+CREATE MATERIALIZED VIEW saimiris.from_kafka_mv TO saimiris.replies
 AS SELECT
 	toDate(toDateTime64(timeReceivedNs/1000000000, 9)) AS date,
 	now() AS time_inserted_ns,

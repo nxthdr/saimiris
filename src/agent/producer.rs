@@ -11,7 +11,11 @@ use crate::auth::KafkaAuth;
 use crate::config::AppConfig;
 use crate::reply::serialize_reply;
 
-pub async fn produce(config: &AppConfig, auth: KafkaAuth, mut rx: Receiver<Reply>) {
+pub async fn produce(
+    config: &AppConfig,
+    auth: KafkaAuth,
+    mut rx: Receiver<Reply>,
+) {
     if config.kafka.out_enable == false {
         warn!("Kafka producer is disabled");
         loop {

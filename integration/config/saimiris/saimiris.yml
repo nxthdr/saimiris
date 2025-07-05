@@ -1,12 +1,21 @@
 agent:
   id: wbmwwp9vna
+  metrics_address: "127.0.0.1:8081"
+
+caracat:
+  - interface: "en0"
+    src_ipv4_addr: "127.0.0.1"
+    src_ipv6_addr: "::1"
+    integrity_check: false
+    probing_rate: 100
+    instance_id: 0
 
 kafka:
   brokers: "localhost:9092"
   auth_protocol: PLAINTEXT
 
-  in_topics: saimiris-targets
+  in_topics: saimiris-probes
   in_group_id: saimiris-agent-wbmwwp9vna
 
   out_enable: true
-  out_topic: saimiris-results
+  out_topic: saimiris-replies
