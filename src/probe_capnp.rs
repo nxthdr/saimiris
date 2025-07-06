@@ -308,11 +308,11 @@ pub mod probe {
         2 => <u16 as ::capnp::introspect::Introspect>::introspect(),
         3 => <u8 as ::capnp::introspect::Introspect>::introspect(),
         4 => <crate::probe_capnp::probe::Protocol as ::capnp::introspect::Introspect>::introspect(),
-        _ => panic!("invalid field index {}", index),
+        _ => ::capnp::introspect::panic_invalid_field_index(index),
       }
     }
     pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
-      panic!("invalid annotation indices ({:?}, {}) ", child_index, index)
+      ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
     }
     pub static RAW_SCHEMA: ::capnp::introspect::RawStructSchema = ::capnp::introspect::RawStructSchema {
       encoded_node: &ENCODED_NODE,
@@ -399,7 +399,7 @@ pub mod probe {
     ::capnp::word(105, 99, 109, 112, 118, 54, 0, 0),
   ];
   pub fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
-    panic!("invalid annotation indices ({:?}, {}) ", child_index, index)
+    ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)
   }
   }
 }

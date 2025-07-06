@@ -19,13 +19,16 @@ pub fn spawn_healthcheck_loop(
     let register_url = format!("{}/agent-api/agent/register", base_url);
 
     spawn(async move {
-        debug!("Starting healthcheck loop for agent {} with gateway {}", agent_id, base_url);
+        debug!(
+            "Starting healthcheck loop for agent {} with gateway {}",
+            agent_id, base_url
+        );
         let client = Client::new();
-        
+
         // Add initial delay to allow gateway to start up
         debug!("Waiting 5 seconds before first gateway connection attempt...");
         sleep(Duration::from_secs(5)).await;
-        
+
         loop {
             // Step 1: Check if agent exists (GET /agent/{id})
             let mut needs_registration = false;
