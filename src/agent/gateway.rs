@@ -19,7 +19,13 @@ pub fn spawn_healthcheck_loop(
     let register_url = format!("{}/agent-api/agent/register", base_url);
 
     spawn(async move {
+        debug!("Starting healthcheck loop for agent {} with gateway {}", agent_id, base_url);
         let client = Client::new();
+        
+        // Add initial delay to allow gateway to start up
+        debug!("Waiting 5 seconds before first gateway connection attempt...");
+        sleep(Duration::from_secs(5)).await;
+        
         loop {
             // Step 1: Check if agent exists (GET /agent/{id})
             let mut needs_registration = false;
@@ -44,6 +50,7 @@ pub fn spawn_healthcheck_loop(
                 }
                 Err(e) => {
                     error!("Failed to check if agent exists: {}", e);
+                    debug!("Network error during agent existence check, gateway might not be ready yet");
                     // Skip this iteration if we can't connect to the gateway
                     sleep(Duration::from_secs(30)).await;
                     continue;
@@ -73,9 +80,16 @@ pub fn spawn_healthcheck_loop(
                     }
                     Ok(r) => {
                         error!("Failed to register agent: {}", r.status());
+                        // Don't continue with config/health updates if registration failed
+                        debug!("Skipping config and health updates due to registration failure, will retry in 30 seconds");
+                        sleep(Duration::from_secs(30)).await;
+                        continue;
                     }
                     Err(e) => {
                         error!("Failed to register agent: {}", e);
+                        debug!("Network error during registration, will retry in 30 seconds");
+                        sleep(Duration::from_secs(30)).await;
+                        continue;
                     }
                 }
             }
@@ -93,9 +107,13 @@ pub fn spawn_healthcheck_loop(
                 }
                 Ok(r) => {
                     error!("Failed to send agent config: {}", r.status());
+                    // Don't fail the entire loop, just continue to health check
                 }
                 Err(e) => {
                     error!("Failed to send agent config: {}", e);
+                    debug!("Network error during config update, will retry in 30 seconds");
+                    sleep(Duration::from_secs(30)).await;
+                    continue;
                 }
             }
 
@@ -118,12 +136,17 @@ pub fn spawn_healthcheck_loop(
                 }
                 Ok(r) => {
                     warn!("Failed to send healthcheck: {}", r.status());
+                    // Don't fail the entire loop, just log and continue
                 }
                 Err(e) => {
                     error!("Failed to send healthcheck: {}", e);
+                    debug!("Network error during healthcheck, will retry in 30 seconds");
+                    sleep(Duration::from_secs(30)).await;
+                    continue;
                 }
             }
 
+            debug!("Healthcheck cycle completed, sleeping for 30 seconds");
             sleep(Duration::from_secs(30)).await; // TODO: make interval configurable
         }
     });
