@@ -21,8 +21,8 @@ async fn test_caracat_config_defaults_enforced() {
     writeln!(file, "    max_ttl: null").unwrap();
     writeln!(file, "    integrity_check: false").unwrap();
     writeln!(file, "    interface: ''").unwrap();
-    writeln!(file, "    src_ipv4_addr: null").unwrap();
-    writeln!(file, "    src_ipv6_addr: null").unwrap();
+    writeln!(file, "    src_ipv4_prefix: null").unwrap();
+    writeln!(file, "    src_ipv6_prefix: null").unwrap();
     writeln!(file, "    packets: 0").unwrap();
     writeln!(file, "    probing_rate: 0").unwrap();
     writeln!(file, "    rate_limiting_method: ''").unwrap();
@@ -36,8 +36,8 @@ async fn test_caracat_config_defaults_enforced() {
     assert_eq!(caracat.min_ttl, None);
     assert_eq!(caracat.max_ttl, None);
     assert_eq!(caracat.integrity_check, false);
-    assert_eq!(caracat.src_ipv4_addr, None);
-    assert_eq!(caracat.src_ipv6_addr, None);
+    assert_eq!(caracat.src_ipv4_prefix, None);
+    assert_eq!(caracat.src_ipv6_prefix, None);
     assert_eq!(caracat.packets, 1);
     assert_eq!(caracat.probing_rate, 100);
     assert_eq!(caracat.rate_limiting_method, "auto");
@@ -64,8 +64,8 @@ async fn test_caracat_config_defaults_if_none_provided() {
     assert_eq!(caracat.max_ttl, None);
     assert_eq!(caracat.integrity_check, false);
     assert_eq!(caracat.interface, caracat::utilities::get_default_interface());
-    assert_eq!(caracat.src_ipv4_addr, None);
-    assert_eq!(caracat.src_ipv6_addr, None);
+    assert_eq!(caracat.src_ipv4_prefix, None);
+    assert_eq!(caracat.src_ipv6_prefix, None);
     assert_eq!(caracat.packets, 1);
     assert_eq!(caracat.probing_rate, 100);
     assert_eq!(caracat.rate_limiting_method, "auto");

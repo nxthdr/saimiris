@@ -2211,6 +2211,7 @@ dependencies = [
  "clap-verbosity-flag",
  "config",
  "csv",
+ "ipnet",
  "metrics",
  "metrics-exporter-prometheus",
  "pcap",

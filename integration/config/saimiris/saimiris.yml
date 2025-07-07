@@ -4,8 +4,8 @@ agent:
 
 caracat:
   - interface: "en0"
-    src_ipv4_addr: "127.0.0.1"
-    src_ipv6_addr: "::1"
+    src_ipv4_prefix: "127.0.0.0/8"
+    src_ipv6_prefix: "::1/128"
     integrity_check: false
     probing_rate: 100
     instance_id: 0

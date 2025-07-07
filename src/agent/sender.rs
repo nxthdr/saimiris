@@ -55,8 +55,8 @@ impl SendLoop {
 
             let caracat_sender_result = CaracatSender::new(
                 &config.interface,
-                config.src_ipv4_addr,
-                config.src_ipv6_addr,
+                None, // No longer using specific source addresses
+                None, // Caracat will use the default interface behavior
                 config.instance_id,
                 config.dry_run,
             );

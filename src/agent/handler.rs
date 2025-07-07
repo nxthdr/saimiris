@@ -20,29 +20,44 @@ use crate::probe::deserialize_probes;
 
 pub fn determine_target_sender(
     probe_senders_map: &HashMap<String, Sender<Vec<Probe>>>,
+    caracat_configs: &[CaracatConfig],
     sender_ip_from_header: Option<&String>,
-    default_sender_channel: Option<&Sender<Vec<Probe>>>,
-) -> Option<Sender<Vec<Probe>>> {
-    if let Some(ip_addr_str) = sender_ip_from_header {
-        if let Some(sender) = probe_senders_map.get(ip_addr_str) {
-            debug!("Found target sender for IP: {}", ip_addr_str);
-            return Some(sender.clone());
-        } else {
-            warn!(
-                "No Caracat sender configured for IP address: {}. Probes will not be sent.",
-                ip_addr_str
-            );
-            return None;
+) -> Result<Option<Sender<Vec<Probe>>>> {
+    // Source IP is now required from the client
+    let ip_addr_str = match sender_ip_from_header {
+        Some(ip) => ip,
+        None => {
+            return Err(anyhow::anyhow!(
+                "Source IP address is required but not provided in Kafka message headers"
+            ));
         }
-    } else {
-        if let Some(default_sender) = default_sender_channel {
-            debug!("No specific sender IP address found in headers. Using default sender (first configured Caracat instance).");
-            return Some(default_sender.clone());
-        } else {
-            warn!("No specific sender IP address found in headers, and no default sender (first CaracatConfig) is available. Probes will not be sent.");
-            return None;
+    };
+
+    // Find a caracat config that can handle this source IP based on prefixes
+    for caracat_cfg in caracat_configs {
+        let validation_result = crate::config::validate_ip_against_prefixes(
+            ip_addr_str,
+            &caracat_cfg.src_ipv4_prefix,
+            &caracat_cfg.src_ipv6_prefix,
+        );
+
+        if validation_result.is_ok() {
+            // Find the corresponding sender for this instance
+            let instance_key = format!("instance_{}", caracat_cfg.instance_id);
+            if let Some(sender) = probe_senders_map.get(&instance_key) {
+                debug!(
+                    "Source IP {} matches prefix configuration for instance {}, using corresponding sender",
+                    ip_addr_str, caracat_cfg.instance_id
+                );
+                return Ok(Some(sender.clone()));
+            }
         }
     }
+
+    Err(anyhow::anyhow!(
+        "Source IP address {} is not within any configured prefix for this agent",
+        ip_addr_str
+    ))
 }
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
@@ -89,9 +104,9 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
     // --- Setup SendLoops (one per CaracatConfig) ---
     for caracat_cfg in &config.caracat {
         debug!(
-            "Initializing SendLoop for Caracat instance: interface: {}, src_ipv4: {:?}, src_ipv6: {:?}, instance_id: {}",
-            caracat_cfg.interface, caracat_cfg.src_ipv4_addr, caracat_cfg.src_ipv6_addr, caracat_cfg.instance_id
-        );
+                "Initializing SendLoop for Caracat instance: interface: {}, src_ipv4_prefix: {:?}, src_ipv6_prefix: {:?}, instance_id: {}",
+                caracat_cfg.interface, caracat_cfg.src_ipv4_prefix, caracat_cfg.src_ipv6_prefix, caracat_cfg.instance_id
+            );
 
         let (tx_probe_to_sender, rx_probes_for_sender): (Sender<Vec<Probe>>, Receiver<Vec<Probe>>) =
             channel(100000); // Probes for this specific SendLoop
@@ -104,23 +119,24 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             );
         }
 
-        let sender_ip_key: Option<String> = caracat_cfg
-            .src_ipv4_addr
-            .map(|ip| ip.to_string())
-            .or_else(|| caracat_cfg.src_ipv6_addr.map(|ip| ip.to_string()));
+        // Register this caracat instance with its prefix configuration
+        // We no longer map by specific IP but by instance ID
+        let has_prefix =
+            caracat_cfg.src_ipv4_prefix.is_some() || caracat_cfg.src_ipv6_prefix.is_some();
 
-        if let Some(ip_key) = sender_ip_key {
-            if probe_senders_map.contains_key(&ip_key) {
-                warn!("Duplicate Caracat configuration for source IP: {}. Only the first one will be targetable by this IP via header. (Associated with instance_id: {})", ip_key, caracat_cfg.instance_id);
+        if has_prefix {
+            let instance_key = format!("instance_{}", caracat_cfg.instance_id);
+            if probe_senders_map.contains_key(&instance_key) {
+                warn!("Duplicate Caracat configuration for instance ID: {}. Only the first one will be used.", caracat_cfg.instance_id);
             } else {
-                probe_senders_map.insert(ip_key.clone(), tx_probe_to_sender.clone());
+                probe_senders_map.insert(instance_key.clone(), tx_probe_to_sender.clone());
                 debug!(
-                    "Caracat sender registered for IP-specific targeting: {} (Instance ID: {})",
-                    ip_key, caracat_cfg.instance_id
+                    "Caracat sender registered for instance ID: {} with prefixes IPv4: {:?}, IPv6: {:?}",
+                    caracat_cfg.instance_id, caracat_cfg.src_ipv4_prefix, caracat_cfg.src_ipv6_prefix
                 );
             }
         } else {
-            debug!("Caracat configuration for interface {} (Instance ID: {}) has no source IP. It can be the default sender if it's the first config.", caracat_cfg.interface, caracat_cfg.instance_id);
+            debug!("Caracat configuration for interface {} (Instance ID: {}) has no prefixes. It can be the default sender if it's the first config.", caracat_cfg.interface, caracat_cfg.instance_id);
         }
 
         let _send_loop = SendLoop::new(
@@ -327,39 +343,49 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
         let target_sender_channel = determine_target_sender(
             &probe_senders_map,
+            &config.caracat,
             sender_ip_from_header.as_ref(),
-            default_probe_sender_channel.as_ref(),
         );
 
-        if let Some(sender_channel) = target_sender_channel {
-            debug!(
-                "Distributing {} probes to selected Caracat sender.",
-                probes_to_send.len()
-            );
+        match target_sender_channel {
+            Ok(Some(sender_channel)) => {
+                debug!(
+                    "Distributing {} probes to selected Caracat sender.",
+                    probes_to_send.len()
+                );
 
-            let send_task_join_handle =
-                spawn(async move { sender_channel.send(probes_to_send).await });
+                let send_task_join_handle =
+                    spawn(async move { sender_channel.send(probes_to_send).await });
 
-            match send_task_join_handle.await {
-                Ok(Ok(())) => {
-                    trace!("Probes successfully queued for the selected sender instance via async send.");
-                }
-                Ok(Err(send_err)) => {
-                    error!("Failed to send probes to selected Caracat sender (async channel error): {}. SendLoop may have exited.", send_err);
-                }
-                Err(join_err) => {
-                    error!(
-                        "Async task for sending probes to selected sender panicked: {}",
-                        join_err
-                    );
+                match send_task_join_handle.await {
+                    Ok(Ok(())) => {
+                        trace!("Probes successfully queued for the selected sender instance via async send.");
+                    }
+                    Ok(Err(send_err)) => {
+                        error!("Failed to send probes to selected Caracat sender (async channel error): {}. SendLoop may have exited.", send_err);
+                    }
+                    Err(join_err) => {
+                        error!(
+                            "Async task for sending probes to selected sender panicked: {}",
+                            join_err
+                        );
+                    }
                 }
             }
-        } else {
-            if !probes_to_send.is_empty() {
-                warn!(
-                    "Probes not sent as no target Caracat sender could be determined (X-Sender-IP: {:?}).",
-                    sender_ip_from_header
+            Ok(None) => {
+                error!("No suitable sender found for the provided source IP");
+            }
+            Err(e) => {
+                error!(
+                    "Failed to validate source IP against configured prefixes: {}",
+                    e
                 );
+                if !probes_to_send.is_empty() {
+                    warn!(
+                        "Probes not sent due to validation error (source IP: {:?}): {}",
+                        sender_ip_from_header, e
+                    );
+                }
             }
         }
 

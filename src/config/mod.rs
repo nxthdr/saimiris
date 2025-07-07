@@ -4,12 +4,67 @@ pub mod kafka;
 
 use anyhow::Result;
 use config::Config;
-use std::net::SocketAddr;
+use ipnet::{Ipv4Net, Ipv6Net};
+use std::net::{IpAddr, SocketAddr};
 use tokio::net::lookup_host;
 
 pub use agent::{AgentConfig, RawAgentConfig};
-pub use client::{ClientConfig, parse_and_validate_client_args};
+pub use client::{parse_and_validate_client_args, ClientConfig};
 pub use kafka::KafkaConfig;
+
+// --- IP prefix validation utilities ---
+pub fn validate_ip_against_prefixes(
+    ip_str: &str,
+    ipv4_prefix: &Option<String>,
+    ipv6_prefix: &Option<String>,
+) -> Result<()> {
+    let ip: IpAddr = ip_str
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid IP address format: {}", ip_str))?;
+
+    match ip {
+        IpAddr::V4(ipv4) => {
+            if let Some(prefix_str) = ipv4_prefix {
+                let prefix: Ipv4Net = prefix_str
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("Invalid IPv4 prefix format: {}", prefix_str))?;
+                if !prefix.contains(&ipv4) {
+                    return Err(anyhow::anyhow!(
+                        "IPv4 address {} is not within the allowed prefix {}",
+                        ip_str,
+                        prefix_str
+                    ));
+                }
+            } else {
+                return Err(anyhow::anyhow!(
+                    "IPv4 address {} provided but no IPv4 prefix configured for agent",
+                    ip_str
+                ));
+            }
+        }
+        IpAddr::V6(ipv6) => {
+            if let Some(prefix_str) = ipv6_prefix {
+                let prefix: Ipv6Net = prefix_str
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("Invalid IPv6 prefix format: {}", prefix_str))?;
+                if !prefix.contains(&ipv6) {
+                    return Err(anyhow::anyhow!(
+                        "IPv6 address {} is not within the allowed prefix {}",
+                        ip_str,
+                        prefix_str
+                    ));
+                }
+            } else {
+                return Err(anyhow::anyhow!(
+                    "IPv6 address {} provided but no IPv6 prefix configured for agent",
+                    ip_str
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
 
 // --- Shared utilities ---
 fn load_config_source(config_path: &str) -> Result<Config> {
@@ -84,9 +139,9 @@ pub struct CaracatConfig {
     #[serde(default = "default_caracat_interface")]
     pub interface: String,
     #[serde(default)]
-    pub src_ipv4_addr: Option<std::net::Ipv4Addr>,
+    pub src_ipv4_prefix: Option<String>,
     #[serde(default)]
-    pub src_ipv6_addr: Option<std::net::Ipv6Addr>,
+    pub src_ipv6_prefix: Option<String>,
     #[serde(default = "default_caracat_packets")]
     pub packets: u64,
     #[serde(default = "default_caracat_probing_rate")]

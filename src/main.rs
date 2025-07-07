@@ -46,14 +46,10 @@ enum Command {
         #[arg(short, long)]
         probes_file: Option<PathBuf>,
 
-        /// Agent IDs (comma separated)
-        #[arg(index = 1)]
+        /// Agent specifications in format 'agent1:ip1,agent2:ip2'.
+        /// For IPv6 addresses, use brackets: 'agent1:[2001:db8::1],agent2:192.168.1.1'
+        #[arg(index = 1, value_name = "AGENTS")]
         agents: String,
-
-        /// Optional comma-separated list of source IP addresses, one for each agent.
-        /// If provided, the number of IPs must match the number of agents.
-        #[arg(long)]
-        agent_src_ips: Option<String>,
     },
 }
 
@@ -84,7 +80,7 @@ fn set_metrics(metrics_address: SocketAddr) {
 
     // Producer metrics
     metrics::describe_counter!(
-        "risotto_kafka_messages_total",
+        "saimiris_kafka_messages_total",
         "Total number of Kafka messages produced"
     );
 
@@ -136,7 +132,6 @@ async fn main() -> Result<()> {
             config,
             agents,
             probes_file,
-            agent_src_ips,
         } => {
             if probes_file.is_none() && stdin().is_terminal() {
                 App::command().print_help().unwrap();
@@ -144,8 +139,7 @@ async fn main() -> Result<()> {
             }
 
             // Parse and validate client arguments
-            let client_config =
-                parse_and_validate_client_args(&agents, agent_src_ips, probes_file)?;
+            let client_config = parse_and_validate_client_args(&agents, probes_file)?;
 
             let app_config = app_config(&config).await?;
             trace!("{:?}", app_config);

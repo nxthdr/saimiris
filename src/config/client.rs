@@ -11,50 +11,254 @@ pub struct ClientConfig {
 
 pub fn parse_and_validate_client_args(
     agents: &str,
-    agent_src_ips: Option<String>,
     probes_file: Option<PathBuf>,
 ) -> Result<ClientConfig> {
-    // Parse agents
-    let agent_names = agents.split(',').map(String::from).collect::<Vec<String>>();
+    let agents = agents.trim();
+    if agents.is_empty() {
+        return Err(anyhow::anyhow!("At least one agent must be specified"));
+    }
 
-    // Parse agent source IPs if provided
-    let agent_src_ips = match agent_src_ips {
-        Some(src_ips_str) => {
-            let parsed_ips: Vec<Option<String>> = src_ips_str
-                .split(',')
-                .map(str::trim)
-                .map(|s| {
-                    if s.is_empty() {
-                        None
-                    } else {
-                        Some(s.to_string())
-                    }
-                })
-                .collect();
+    // Parse agents in format: agent1:ip1,agent2:ip2
+    // Handle IPv6 addresses in brackets: agent1:[2001:db8::1]
+    let measurement_infos: Vec<MeasurementInfo> = agents
+        .split(',')
+        .map(|agent_spec| {
+            let agent_spec = agent_spec.trim();
+            if agent_spec.is_empty() {
+                return Err(anyhow::anyhow!("Empty agent specification provided"));
+            }
 
-            // Validate length
-            if parsed_ips.len() != agent_names.len() {
+            // For IPv6 addresses in brackets, handle them specially
+            let (agent_name, ip_str) = if let Some(bracket_start) = agent_spec.find('[') {
+                let agent_name = agent_spec[..bracket_start].trim_end_matches(':');
+                if let Some(bracket_end) = agent_spec.find(']') {
+                    let ip_str = &agent_spec[bracket_start + 1..bracket_end];
+                    (agent_name, ip_str)
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Invalid agent specification '{}'. IPv6 addresses must be enclosed in brackets: 'agent_name:[ipv6_address]'",
+                        agent_spec
+                    ));
+                }
+            } else {
+                // Regular IPv4 format
+                let parts: Vec<&str> = agent_spec.split(':').collect();
+                if parts.len() != 2 {
+                    return Err(anyhow::anyhow!(
+                        "Invalid agent specification '{}'. Expected format: 'agent_name:ip_address' or 'agent_name:[ipv6_address]'",
+                        agent_spec
+                    ));
+                }
+                (parts[0].trim(), parts[1].trim())
+            };
+
+            if agent_name.is_empty() {
                 return Err(anyhow::anyhow!(
-                    "Number of agent source IPs must match the number of agents"
+                    "Empty agent name in specification '{}'",
+                    agent_spec
                 ));
             }
 
-            parsed_ips
-        }
-        None => {
-            vec![None; agent_names.len()]
-        }
-    };
+            if ip_str.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Empty IP address in specification '{}'",
+                    agent_spec
+                ));
+            }
 
-    // Create MeasurementInfo structs
-    let measurement_infos: Vec<MeasurementInfo> = agent_names
-        .into_iter()
-        .zip(agent_src_ips)
-        .map(|(name, src_ip)| MeasurementInfo { name, src_ip })
-        .collect();
+            // Validate IP address format
+            ip_str.parse::<std::net::IpAddr>().map_err(|_| {
+                anyhow::anyhow!("Invalid IP address format '{}' in specification '{}'", ip_str, agent_spec)
+            })?;
+
+            Ok(MeasurementInfo {
+                name: agent_name.to_string(),
+                src_ip: Some(ip_str.to_string()),
+            })
+        })
+        .collect::<Result<Vec<MeasurementInfo>>>()?;
+
+    if measurement_infos.is_empty() {
+        return Err(anyhow::anyhow!("At least one agent must be specified"));
+    }
 
     Ok(ClientConfig {
         measurement_infos,
         probes_file,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_format_agent_ip_pairs() {
+        let result = parse_and_validate_client_args("agent1:192.168.1.1,agent2:10.0.0.1", None);
+
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.measurement_infos.len(), 2);
+        assert_eq!(config.measurement_infos[0].name, "agent1");
+        assert_eq!(
+            config.measurement_infos[0].src_ip,
+            Some("192.168.1.1".to_string())
+        );
+        assert_eq!(config.measurement_infos[1].name, "agent2");
+        assert_eq!(
+            config.measurement_infos[1].src_ip,
+            Some("10.0.0.1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_new_format_with_ipv6() {
+        let result =
+            parse_and_validate_client_args("agent1:[2001:db8::1],agent2:192.168.1.1", None);
+
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.measurement_infos.len(), 2);
+        assert_eq!(
+            config.measurement_infos[0].src_ip,
+            Some("2001:db8::1".to_string())
+        );
+        assert_eq!(
+            config.measurement_infos[1].src_ip,
+            Some("192.168.1.1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_invalid_ip_in_new_format() {
+        let result = parse_and_validate_client_args("agent1:invalid_ip,agent2:192.168.1.1", None);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid IP address format"));
+    }
+
+    #[test]
+    fn test_malformed_agent_spec() {
+        let result =
+            parse_and_validate_client_args("agent1:192.168.1.1:extra,agent2:10.0.0.1", None);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid agent specification"));
+    }
+
+    #[test]
+    fn test_empty_agent_name() {
+        let result = parse_and_validate_client_args(":192.168.1.1,agent2:10.0.0.1", None);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Empty agent name"));
+    }
+
+    #[test]
+    fn test_empty_agents() {
+        let result = parse_and_validate_client_args("", None);
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("At least one agent must be specified"));
+    }
+
+    #[test]
+    fn test_ipv6_without_brackets_error() {
+        let result = parse_and_validate_client_args("agent1:2001:db8::1", None);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Expected format"));
+    }
+
+    #[test]
+    fn test_ipv6_malformed_brackets() {
+        let result = parse_and_validate_client_args("agent1:[2001:db8::1", None);
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("IPv6 addresses must be enclosed in brackets"));
+    }
+
+    #[test]
+    fn test_mixed_ipv4_ipv6_new_format() {
+        let result = parse_and_validate_client_args(
+            "agent1:192.168.1.1,agent2:[2001:db8::1],agent3:10.0.0.1",
+            None,
+        );
+
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.measurement_infos.len(), 3);
+        assert_eq!(
+            config.measurement_infos[0].src_ip,
+            Some("192.168.1.1".to_string())
+        );
+        assert_eq!(
+            config.measurement_infos[1].src_ip,
+            Some("2001:db8::1".to_string())
+        );
+        assert_eq!(
+            config.measurement_infos[2].src_ip,
+            Some("10.0.0.1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_empty_ip_address() {
+        let result = parse_and_validate_client_args("agent1:,agent2:192.168.1.1", None);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Empty IP address"));
+    }
+
+    #[test]
+    fn test_missing_colon_separator() {
+        let result = parse_and_validate_client_args("agent1192.168.1.1,agent2:10.0.0.1", None);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Expected format"));
+    }
+
+    #[test]
+    fn test_single_agent() {
+        let result = parse_and_validate_client_args("agent1:192.168.1.1", None);
+
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.measurement_infos.len(), 1);
+        assert_eq!(config.measurement_infos[0].name, "agent1");
+        assert_eq!(
+            config.measurement_infos[0].src_ip,
+            Some("192.168.1.1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_whitespace_handling() {
+        let result =
+            parse_and_validate_client_args(" agent1 : 192.168.1.1 , agent2 : 10.0.0.1 ", None);
+
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert_eq!(config.measurement_infos.len(), 2);
+        assert_eq!(config.measurement_infos[0].name, "agent1");
+        assert_eq!(
+            config.measurement_infos[0].src_ip,
+            Some("192.168.1.1".to_string())
+        );
+        assert_eq!(config.measurement_infos[1].name, "agent2");
+        assert_eq!(
+            config.measurement_infos[1].src_ip,
+            Some("10.0.0.1".to_string())
+        );
+    }
 }

@@ -6,13 +6,7 @@ The integration tests setup consists in a Redpanda and ClickHouse instance. Requ
 
 ### Test Scripts
 
-Two test scripts are provided to validate Saimiris functionality after major changes:
-
-**Quick Tests** (`tests/test_quick.sh`):
-- Duration: ~30 seconds
-- No Docker required
-- Tests: compilation, config structure, CLI, UUID validation, agent source IPs
-- Use case: Fast feedback during development
+An integration test script is provided to validate Saimiris functionality after major changes:
 
 **Integration Tests** (`tests/test_integration.sh`):
 - Duration: ~3-5 minutes
@@ -23,18 +17,15 @@ Two test scripts are provided to validate Saimiris functionality after major cha
 ### Usage
 
 ```bash
-# Quick validation (from repository root)
-./integration/tests/test_quick.sh
-
 # Full end-to-end test (from repository root)
 ./integration/tests/test_integration.sh
 ```
 
 ### What Gets Tested
 
-Both scripts validate recent enhancements:
+The integration test validates recent enhancements:
 - ✅ **Config Refactor**: Moved client config to `src/config/` module structure
-- ✅ **Agent Source IPs**: Optional source IP assignment with count validation
+- ✅ **Agent:IP Format**: Simplified agent specification with embedded IP addresses
 - ✅ **CLI Functionality**: Help commands, argument parsing, error handling
 
 The integration test additionally verifies:
@@ -44,7 +35,6 @@ The integration test additionally verifies:
 
 ### Requirements
 
-**Quick Tests**: Rust toolchain only
 **Integration Tests**: Docker, Docker Compose, ports 9092 and 8123 available
 
 ## Manual Testing
@@ -68,7 +58,7 @@ cargo run -- agent --config=integration/config/saimiris/saimiris.yml
 * Run Saimiris Client (from the root of the repository)
 
 ```sh
-cat integration/probes.txt | cargo run -- client --config=integration/config/saimiris/saimiris.yml wbmwwp9vna
+cat integration/probes.txt | cargo run -- client --config=integration/config/saimiris/saimiris.yml wbmwwp9vna:127.0.0.1
 ```
 
 * Check ClickHouse for results

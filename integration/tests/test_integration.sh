@@ -126,6 +126,52 @@ check_tables() {
     echo "$tables" | grep -q "from_kafka" && echo "$tables" | grep -q "replies"
 }
 
+# Function to create required Kafka topics
+create_kafka_topics() {
+    cd "$INTEGRATION_DIR"
+    print_status "Creating required Kafka topics..."
+
+    # Create saimiris-probes topic
+    if docker compose exec -T redpanda rpk topic create saimiris-probes --partitions 1 --replicas 1 >/dev/null 2>&1; then
+        print_success "Created topic: saimiris-probes"
+    else
+        # Topic might already exist, check if it exists
+        if docker compose exec -T redpanda rpk topic list | grep -q "saimiris-probes"; then
+            print_status "Topic saimiris-probes already exists"
+        else
+            print_warning "Failed to create topic: saimiris-probes"
+        fi
+    fi
+
+    # Create saimiris-replies topic
+    if docker compose exec -T redpanda rpk topic create saimiris-replies --partitions 1 --replicas 1 >/dev/null 2>&1; then
+        print_success "Created topic: saimiris-replies"
+    else
+        # Topic might already exist, check if it exists
+        if docker compose exec -T redpanda rpk topic list | grep -q "saimiris-replies"; then
+            print_status "Topic saimiris-replies already exists"
+        else
+            print_warning "Failed to create topic: saimiris-replies"
+        fi
+    fi
+
+    # List all topics for verification
+    print_status "Available Kafka topics:"
+    docker compose exec -T redpanda rpk topic list || print_warning "Could not list topics"
+
+    # Test Kafka connectivity from host to ensure localhost:9092 works
+    print_status "Testing Kafka connectivity from host..."
+    for i in {1..5}; do
+        if docker compose exec -T redpanda rpk cluster metadata --brokers localhost:9092 >/dev/null 2>&1; then
+            print_success "Kafka is accessible from host on localhost:9092"
+            break
+        else
+            print_status "Waiting for Kafka to be accessible from host (attempt $i/5)..."
+            sleep 3
+        fi
+    done
+}
+
 # Function to run the integration test
 run_integration_test() {
     print_status "Starting Saimiris integration test..."
@@ -147,6 +193,13 @@ run_integration_test() {
     wait_for_service "Kafka (Redpanda)" "check_kafka"
     wait_for_service "ClickHouse" "check_clickhouse"
 
+    # Create required Kafka topics
+    create_kafka_topics
+
+    # Additional wait to ensure Kafka is fully ready for client connections
+    print_status "Waiting for Kafka to be fully ready for client connections..."
+    sleep 10
+
     # Wait a bit more for tables to be created
     sleep 5
 
@@ -167,8 +220,9 @@ run_integration_test() {
     cargo run --quiet -- agent --config="$INTEGRATION_DIR/config/saimiris/saimiris.yml" > /tmp/saimiris_agent.log 2>&1 &
     AGENT_PID=$!
 
-    # Wait for agent to start
-    sleep 5
+    # Wait for agent to start and establish connections
+    print_status "Waiting for agent to establish Kafka connections..."
+    sleep 15
 
     # Check if agent is still running
     if ! kill -0 $AGENT_PID 2>/dev/null; then
@@ -180,14 +234,14 @@ run_integration_test() {
 
     print_success "Agent started successfully (PID: $AGENT_PID)"
 
-    # Give agent more time to fully initialize
-    sleep 3
+    # Give agent more time to fully initialize and stabilize connections
+    sleep 5
 
     # Run the client with test data
     print_status "Running Saimiris client..."
 
-    # Run client
-    if run_with_timeout $TIMEOUT_SECONDS "cat '$INTEGRATION_DIR/probes_local.txt' | cargo run --quiet -- client --config='$INTEGRATION_DIR/config/saimiris/saimiris.yml' '$AGENT_ID'"; then
+    # Run client with new agent:ip format
+    if run_with_timeout $TIMEOUT_SECONDS "cat '$INTEGRATION_DIR/probes_local.txt' | cargo run --quiet -- client --config='$INTEGRATION_DIR/config/saimiris/saimiris.yml' '$AGENT_ID:127.0.0.1'"; then
         print_success "Client completed successfully"
     else
         print_error "Client failed or timed out"
@@ -221,8 +275,8 @@ run_integration_test() {
         fi
     fi
 
-    # Verify data in ClickHouse
-    print_status "Verifying data in ClickHouse..."
+    # Verify data in ClickHouse or successful probe processing
+    print_status "Verifying probe processing..."
     cd "$INTEGRATION_DIR"
 
     local row_count=$(docker compose exec -T clickhouse clickhouse-client --query "SELECT COUNT(*) FROM saimiris.replies" 2>/dev/null || echo "0")
@@ -235,10 +289,30 @@ run_integration_test() {
         docker compose exec -T clickhouse clickhouse-client --query "SELECT agent_id, probe_dst_addr, probe_ttl FROM saimiris.replies LIMIT 3" 2>/dev/null || true
 
     else
-        print_warning "No records found in ClickHouse - this might be due to timing or configuration"
-        print_status "Checking if any data exists in replies table:"
-        local total_rows=$(docker compose exec -T clickhouse clickhouse-client --query "SELECT COUNT(*) FROM saimiris.replies" 2>/dev/null || echo "0")
-        print_status "Total rows in replies table: $total_rows"
+        print_status "No records found in ClickHouse - checking if agent successfully processed probe messages..."
+
+        # Check if agent successfully processed the probe messages
+        if grep -q "Message intended for this agent. Processing probes." /tmp/saimiris_agent.log; then
+            print_success "Agent successfully received and processed probe messages from Kafka"
+            print_status "Note: No probe replies in ClickHouse (expected in test environment without actual network probing)"
+        else
+            print_error "Agent did not successfully process probe messages"
+            print_status "Debugging information:"
+            print_status "Checking if any data exists in replies table:"
+            local total_rows=$(docker compose exec -T clickhouse clickhouse-client --query "SELECT COUNT(*) FROM saimiris.replies" 2>/dev/null || echo "0")
+            print_status "Total rows in replies table: $total_rows"
+
+            # Check if from_kafka table has data (raw ingestion)
+            local kafka_rows=$(docker compose exec -T clickhouse clickhouse-client --query "SELECT COUNT(*) FROM saimiris.from_kafka" 2>/dev/null || echo "0")
+            print_status "Total rows in from_kafka table: $kafka_rows"
+
+            # Show recent agent logs for debugging
+            print_status "Recent agent log entries:"
+            tail -20 /tmp/saimiris_agent.log || true
+
+            print_error "Integration test failed: Agent did not process probe messages successfully"
+            return 1
+        fi
     fi
 
     return 0
