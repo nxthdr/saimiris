@@ -4,6 +4,8 @@ use caracat::rate_limiter::RateLimitingMethod;
 use caracat::sender::Sender as CaracatSender;
 use metrics::counter;
 use metrics::Label;
+use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
@@ -14,6 +16,13 @@ use tracing::{debug, error, info, trace};
 
 use crate::config::CaracatConfig;
 
+// Type to represent probes with their source IP
+#[derive(Debug)]
+pub struct ProbesWithSource {
+    pub probes: Vec<Probe>,
+    pub source_ip: String,
+}
+
 pub struct SendLoop {
     handle: JoinHandle<()>,
     stopped: Arc<Mutex<bool>>,
@@ -21,7 +30,7 @@ pub struct SendLoop {
 
 impl SendLoop {
     pub fn new(
-        mut rx: TokioReceiver<Vec<Probe>>,
+        mut rx: TokioReceiver<ProbesWithSource>,
         agent_id: String,
         config: CaracatConfig,
         runtime_handle: TokioHandle,
@@ -53,27 +62,8 @@ impl SendLoop {
         let handle = thread::spawn(move || {
             debug!("SendLoop thread started for interface: {}", interface_name);
 
-            let caracat_sender_result = CaracatSender::new(
-                &config.interface,
-                None, // No longer using specific source addresses
-                None, // Caracat will use the default interface behavior
-                config.instance_id,
-                config.dry_run,
-            );
-
-            let mut caracat_sender = match caracat_sender_result {
-                Ok(s) => s,
-                Err(e) => {
-                    error!(
-                        "Failed to create Caracat sender for interface {}: {}. SendLoop thread exiting.",
-                        config.interface, e
-                    );
-                    if let Ok(mut s_lock) = stopped_thr.lock() {
-                        *s_lock = true;
-                    }
-                    return;
-                }
-            };
+            // Cache of CaracatSender instances per source IP
+            let mut caracat_senders: HashMap<String, CaracatSender> = HashMap::new();
 
             // Extra logging for debugging SendLoop lifecycle
             info!("SendLoop for interface {} is running.", config.interface);
@@ -84,7 +74,7 @@ impl SendLoop {
                     break;
                 }
 
-                let probes = match thread_runtime_handle.block_on(rx.recv()) {
+                let probes_with_source = match thread_runtime_handle.block_on(rx.recv()) {
                     Some(p) => p,
                     None => {
                         error!(
@@ -95,8 +85,60 @@ impl SendLoop {
                     }
                 };
 
+                let source_ip = probes_with_source.source_ip.clone();
+                let probes = probes_with_source.probes;
+
                 counter!("saimiris_sender_read_total", metrics_labels.clone())
                     .increment(probes.len().try_into().unwrap_or(0));
+
+                // Get or create CaracatSender for this source IP
+                let caracat_sender = match caracat_senders.get_mut(&source_ip) {
+                    Some(sender) => sender,
+                    None => {
+                        // Parse the source IP to determine if it's IPv4 or IPv6
+                        let parsed_ip: IpAddr = match source_ip.parse() {
+                            Ok(ip) => ip,
+                            Err(e) => {
+                                error!(
+                                    "Invalid source IP address '{}': {}. Skipping probes.",
+                                    source_ip, e
+                                );
+                                continue;
+                            }
+                        };
+
+                        let (src_ipv4, src_ipv6) = match parsed_ip {
+                            IpAddr::V4(ipv4) => (Some(ipv4), None),
+                            IpAddr::V6(ipv6) => (None, Some(ipv6)),
+                        };
+
+                        let caracat_sender_result = CaracatSender::new(
+                            &config.interface,
+                            src_ipv4,
+                            src_ipv6,
+                            config.instance_id,
+                            config.dry_run,
+                        );
+
+                        match caracat_sender_result {
+                            Ok(sender) => {
+                                debug!(
+                                    "Created new CaracatSender for source IP {} on interface {}",
+                                    source_ip, config.interface
+                                );
+                                caracat_senders.insert(source_ip.clone(), sender);
+                                caracat_senders.get_mut(&source_ip).unwrap()
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to create Caracat sender for source IP {} on interface {}: {}. Skipping probes.",
+                                    source_ip, config.interface, e
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                };
 
                 let mut sent_count_batch = 0;
 

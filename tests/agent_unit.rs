@@ -1,13 +1,13 @@
 //! Unit tests for agent logic (saimiris)
-use caracat::models::Probe;
 use saimiris::agent::handler::determine_target_sender;
+use saimiris::agent::sender::ProbesWithSource;
 use saimiris::config::CaracatConfig;
 use std::collections::HashMap;
 use tokio::sync::mpsc::channel;
 
 #[tokio::test]
 async fn test_determine_target_sender_ip_in_prefix() {
-    let (tx, _rx) = channel::<Vec<Probe>>(1);
+    let (tx, _rx) = channel::<ProbesWithSource>(1);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 
@@ -25,7 +25,7 @@ async fn test_determine_target_sender_ip_in_prefix() {
 
 #[tokio::test]
 async fn test_determine_target_sender_ip_not_in_prefix() {
-    let (tx, _rx) = channel::<Vec<Probe>>(1);
+    let (tx, _rx) = channel::<ProbesWithSource>(1);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 
@@ -42,7 +42,7 @@ async fn test_determine_target_sender_ip_not_in_prefix() {
 
 #[tokio::test]
 async fn test_determine_target_sender_no_ip_provided() {
-    let (tx, _rx) = channel::<Vec<Probe>>(1);
+    let (tx, _rx) = channel::<ProbesWithSource>(1);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 
@@ -59,7 +59,7 @@ async fn test_determine_target_sender_no_ip_provided() {
 
 #[tokio::test]
 async fn test_determine_target_sender_ipv6_in_prefix() {
-    let (tx, _rx) = channel::<Vec<Probe>>(1);
+    let (tx, _rx) = channel::<ProbesWithSource>(1);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 

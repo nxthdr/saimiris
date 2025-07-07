@@ -1,5 +1,5 @@
 use anyhow::Result;
-use caracat::models::{Probe, Reply};
+use caracat::models::Reply;
 use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
 use rdkafka::message::Headers;
 use rdkafka::Message;
@@ -13,16 +13,16 @@ use crate::agent::consumer::init_consumer;
 use crate::agent::gateway::spawn_healthcheck_loop;
 use crate::agent::producer;
 use crate::agent::receiver::ReceiveLoop;
-use crate::agent::sender::SendLoop;
+use crate::agent::sender::{ProbesWithSource, SendLoop};
 use crate::auth::{KafkaAuth, SaslAuth};
 use crate::config::{AppConfig, CaracatConfig};
 use crate::probe::deserialize_probes;
 
 pub fn determine_target_sender(
-    probe_senders_map: &HashMap<String, Sender<Vec<Probe>>>,
+    probe_senders_map: &HashMap<String, Sender<ProbesWithSource>>,
     caracat_configs: &[CaracatConfig],
     sender_ip_from_header: Option<&String>,
-) -> Result<Option<Sender<Vec<Probe>>>> {
+) -> Result<Option<Sender<ProbesWithSource>>> {
     // Source IP is now required from the client
     let ip_addr_str = match sender_ip_from_header {
         Some(ip) => ip,
@@ -98,8 +98,8 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         Receiver<Reply>,
     ) = channel(100000);
 
-    let mut probe_senders_map: HashMap<String, Sender<Vec<Probe>>> = HashMap::new();
-    let mut default_probe_sender_channel: Option<Sender<Vec<Probe>>> = None;
+    let mut probe_senders_map: HashMap<String, Sender<ProbesWithSource>> = HashMap::new();
+    let mut default_probe_sender_channel: Option<Sender<ProbesWithSource>> = None;
 
     // --- Setup SendLoops (one per CaracatConfig) ---
     for caracat_cfg in &config.caracat {
@@ -108,8 +108,10 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                 caracat_cfg.interface, caracat_cfg.src_ipv4_prefix, caracat_cfg.src_ipv6_prefix, caracat_cfg.instance_id
             );
 
-        let (tx_probe_to_sender, rx_probes_for_sender): (Sender<Vec<Probe>>, Receiver<Vec<Probe>>) =
-            channel(100000); // Probes for this specific SendLoop
+        let (tx_probe_to_sender, rx_probes_for_sender): (
+            Sender<ProbesWithSource>,
+            Receiver<ProbesWithSource>,
+        ) = channel(100000); // Probes for this specific SendLoop
 
         if default_probe_sender_channel.is_none() {
             default_probe_sender_channel = Some(tx_probe_to_sender.clone());
@@ -354,8 +356,14 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                     probes_to_send.len()
                 );
 
+                // Create ProbesWithSource with the source IP from header
+                let probes_with_source = ProbesWithSource {
+                    probes: probes_to_send,
+                    source_ip: sender_ip_from_header.unwrap().clone(),
+                };
+
                 let send_task_join_handle =
-                    spawn(async move { sender_channel.send(probes_to_send).await });
+                    spawn(async move { sender_channel.send(probes_with_source).await });
 
                 match send_task_join_handle.await {
                     Ok(Ok(())) => {
