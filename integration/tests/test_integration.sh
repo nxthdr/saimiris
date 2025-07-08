@@ -241,7 +241,7 @@ run_integration_test() {
     print_status "Running Saimiris client..."
 
     # Run client with new agent:ip format
-    if run_with_timeout $TIMEOUT_SECONDS "cat '$INTEGRATION_DIR/probes_local.txt' | cargo run --quiet -- client --config='$INTEGRATION_DIR/config/saimiris/saimiris.yml' '$AGENT_ID:127.0.0.1'"; then
+    if run_with_timeout $TIMEOUT_SECONDS "cat '$INTEGRATION_DIR/probes_local.txt' | cargo run --quiet -- client --config='$INTEGRATION_DIR/config/saimiris/saimiris.yml' '$AGENT_ID:127.0.0.1,$AGENT_ID:[::1]'"; then
         print_success "Client completed successfully"
     else
         print_error "Client failed or timed out"

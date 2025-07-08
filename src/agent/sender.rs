@@ -91,25 +91,38 @@ impl SendLoop {
                 counter!("saimiris_sender_read_total", metrics_labels.clone())
                     .increment(probes.len().try_into().unwrap_or(0));
 
-                // Get or create CaracatSender for this source IP
-                let caracat_sender = match caracat_senders.get_mut(&source_ip) {
+                // Determine if we should use a specific source IP or default behavior
+                let use_default_source = source_ip.is_empty();
+                let sender_key = if use_default_source {
+                    "default".to_string()
+                } else {
+                    source_ip.clone()
+                };
+
+                // Get or create CaracatSender for this sender key
+                let caracat_sender = match caracat_senders.get_mut(&sender_key) {
                     Some(sender) => sender,
                     None => {
-                        // Parse the source IP to determine if it's IPv4 or IPv6
-                        let parsed_ip: IpAddr = match source_ip.parse() {
-                            Ok(ip) => ip,
-                            Err(e) => {
-                                error!(
-                                    "Invalid source IP address '{}': {}. Skipping probes.",
-                                    source_ip, e
-                                );
-                                continue;
-                            }
-                        };
+                        let (src_ipv4, src_ipv6) = if use_default_source {
+                            // Use default behavior - let CaracatSender choose source IPs
+                            (None, None)
+                        } else {
+                            // Parse the source IP to determine if it's IPv4 or IPv6
+                            let parsed_ip: IpAddr = match source_ip.parse() {
+                                Ok(ip) => ip,
+                                Err(e) => {
+                                    error!(
+                                        "Invalid source IP address '{}': {}. Skipping probes.",
+                                        source_ip, e
+                                    );
+                                    continue;
+                                }
+                            };
 
-                        let (src_ipv4, src_ipv6) = match parsed_ip {
-                            IpAddr::V4(ipv4) => (Some(ipv4), None),
-                            IpAddr::V6(ipv6) => (None, Some(ipv6)),
+                            match parsed_ip {
+                                IpAddr::V4(ipv4) => (Some(ipv4), None),
+                                IpAddr::V6(ipv6) => (None, Some(ipv6)),
+                            }
                         };
 
                         let caracat_sender_result = CaracatSender::new(
@@ -122,18 +135,32 @@ impl SendLoop {
 
                         match caracat_sender_result {
                             Ok(sender) => {
-                                debug!(
-                                    "Created new CaracatSender for source IP {} on interface {}",
-                                    source_ip, config.interface
-                                );
-                                caracat_senders.insert(source_ip.clone(), sender);
-                                caracat_senders.get_mut(&source_ip).unwrap()
+                                if use_default_source {
+                                    debug!(
+                                        "Created new CaracatSender with default source IP behavior on interface {}",
+                                        config.interface
+                                    );
+                                } else {
+                                    debug!(
+                                        "Created new CaracatSender for source IP {} on interface {}",
+                                        source_ip, config.interface
+                                    );
+                                }
+                                caracat_senders.insert(sender_key.clone(), sender);
+                                caracat_senders.get_mut(&sender_key).unwrap()
                             }
                             Err(e) => {
-                                error!(
-                                    "Failed to create Caracat sender for source IP {} on interface {}: {}. Skipping probes.",
-                                    source_ip, config.interface, e
-                                );
+                                if use_default_source {
+                                    error!(
+                                        "Failed to create Caracat sender with default source IP behavior on interface {}: {}. Skipping probes.",
+                                        config.interface, e
+                                    );
+                                } else {
+                                    error!(
+                                        "Failed to create Caracat sender for source IP {} on interface {}: {}. Skipping probes.",
+                                        source_ip, config.interface, e
+                                    );
+                                }
                                 continue;
                             }
                         }

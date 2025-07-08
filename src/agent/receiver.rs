@@ -17,10 +17,17 @@ pub struct ReceiveLoop {
 }
 
 impl ReceiveLoop {
+    fn is_valid_for_any_instance(reply: &Reply, valid_instance_ids: &[u16]) -> bool {
+        valid_instance_ids
+            .iter()
+            .any(|&instance_id| reply.is_valid(instance_id))
+    }
+
     pub fn new(
         tx: TokioSender<Reply>,
         agent_id: String,
         config: CaracatConfig,
+        valid_instance_ids: Vec<u16>,
         runtime_handle: TokioHandle,
     ) -> Self {
         let stopped = Arc::new(Mutex::new(false));
@@ -63,7 +70,8 @@ impl ReceiveLoop {
                         counter!("saimiris_receiver_received_total", metrics_labels.clone())
                             .increment(1);
                         if !config.integrity_check
-                            || (config.integrity_check && reply.is_valid(config.instance_id))
+                            || (config.integrity_check
+                                && Self::is_valid_for_any_instance(&reply, &valid_instance_ids))
                         {
                             // Send to the Tokio MPSC channel. This is an async operation,
                             // so we need to block on it from this synchronous thread.

@@ -26,7 +26,6 @@ pub fn spawn_healthcheck_loop(
         let client = Client::new();
 
         // Add initial delay to allow gateway to start up
-        debug!("Waiting 5 seconds before first gateway connection attempt...");
         sleep(Duration::from_secs(5)).await;
 
         loop {

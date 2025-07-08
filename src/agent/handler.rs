@@ -22,42 +22,66 @@ pub fn determine_target_sender(
     probe_senders_map: &HashMap<String, Sender<ProbesWithSource>>,
     caracat_configs: &[CaracatConfig],
     sender_ip_from_header: Option<&String>,
-) -> Result<Option<Sender<ProbesWithSource>>> {
-    // Source IP is now required from the client
-    let ip_addr_str = match sender_ip_from_header {
-        Some(ip) => ip,
-        None => {
-            return Err(anyhow::anyhow!(
-                "Source IP address is required but not provided in Kafka message headers"
-            ));
-        }
-    };
+) -> Result<(Option<Sender<ProbesWithSource>>, bool)> {
+    // First, try to find a config with prefixes that matches the source IP (if provided)
+    if let Some(ip_addr_str) = sender_ip_from_header {
+        for caracat_cfg in caracat_configs {
+            let has_prefix =
+                caracat_cfg.src_ipv4_prefix.is_some() || caracat_cfg.src_ipv6_prefix.is_some();
 
-    // Find a caracat config that can handle this source IP based on prefixes
-    for caracat_cfg in caracat_configs {
-        let validation_result = crate::config::validate_ip_against_prefixes(
-            ip_addr_str,
-            &caracat_cfg.src_ipv4_prefix,
-            &caracat_cfg.src_ipv6_prefix,
-        );
-
-        if validation_result.is_ok() {
-            // Find the corresponding sender for this instance
-            let instance_key = format!("instance_{}", caracat_cfg.instance_id);
-            if let Some(sender) = probe_senders_map.get(&instance_key) {
-                debug!(
-                    "Source IP {} matches prefix configuration for instance {}, using corresponding sender",
-                    ip_addr_str, caracat_cfg.instance_id
+            if has_prefix {
+                let validation_result = crate::config::validate_ip_against_prefixes(
+                    ip_addr_str,
+                    &caracat_cfg.src_ipv4_prefix,
+                    &caracat_cfg.src_ipv6_prefix,
                 );
-                return Ok(Some(sender.clone()));
+
+                if validation_result.is_ok() {
+                    // Find the corresponding sender for this instance
+                    let instance_key = format!("instance_{}", caracat_cfg.instance_id);
+                    if let Some(sender) = probe_senders_map.get(&instance_key) {
+                        debug!(
+                            "Source IP {} matches prefix configuration for instance {}, using corresponding sender",
+                            ip_addr_str, caracat_cfg.instance_id
+                        );
+                        return Ok((Some(sender.clone()), true)); // true = use source IP from header
+                    }
+                }
             }
         }
     }
 
-    Err(anyhow::anyhow!(
-        "Source IP address {} is not within any configured prefix for this agent",
-        ip_addr_str
-    ))
+    // If no prefix-based match found, look for a default config (no prefixes)
+    for caracat_cfg in caracat_configs {
+        let has_prefix =
+            caracat_cfg.src_ipv4_prefix.is_some() || caracat_cfg.src_ipv6_prefix.is_some();
+
+        if !has_prefix {
+            // No prefixes configured, use default behavior
+            let instance_key = format!("instance_{}", caracat_cfg.instance_id);
+            if let Some(sender) = probe_senders_map.get(&instance_key) {
+                debug!(
+                    "Using default sender for instance {} (no prefixes configured)",
+                    caracat_cfg.instance_id
+                );
+                return Ok((Some(sender.clone()), false)); // false = don't use source IP from header
+            }
+        }
+    }
+
+    // If we get here, either:
+    // 1. Source IP was provided but doesn't match any configured prefix, OR
+    // 2. No source IP was provided and no default config exists
+    if let Some(ip_addr_str) = sender_ip_from_header {
+        Err(anyhow::anyhow!(
+            "Source IP address {} is not within any configured prefix for this agent",
+            ip_addr_str
+        ))
+    } else {
+        Err(anyhow::anyhow!(
+            "No source IP address provided and no default configuration (without prefixes) available"
+        ))
+    }
 }
 
 pub async fn handle(config: &AppConfig) -> Result<()> {
@@ -126,19 +150,22 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         let has_prefix =
             caracat_cfg.src_ipv4_prefix.is_some() || caracat_cfg.src_ipv6_prefix.is_some();
 
-        if has_prefix {
-            let instance_key = format!("instance_{}", caracat_cfg.instance_id);
-            if probe_senders_map.contains_key(&instance_key) {
-                warn!("Duplicate Caracat configuration for instance ID: {}. Only the first one will be used.", caracat_cfg.instance_id);
-            } else {
-                probe_senders_map.insert(instance_key.clone(), tx_probe_to_sender.clone());
+        let instance_key = format!("instance_{}", caracat_cfg.instance_id);
+        if probe_senders_map.contains_key(&instance_key) {
+            warn!("Duplicate Caracat configuration for instance ID: {}. Only the first one will be used.", caracat_cfg.instance_id);
+        } else {
+            probe_senders_map.insert(instance_key.clone(), tx_probe_to_sender.clone());
+            if has_prefix {
                 debug!(
                     "Caracat sender registered for instance ID: {} with prefixes IPv4: {:?}, IPv6: {:?}",
                     caracat_cfg.instance_id, caracat_cfg.src_ipv4_prefix, caracat_cfg.src_ipv6_prefix
                 );
+            } else {
+                debug!(
+                    "Caracat sender registered for instance ID: {} without prefixes (will use default source IP behavior)",
+                    caracat_cfg.instance_id
+                );
             }
-        } else {
-            debug!("Caracat configuration for interface {} (Instance ID: {}) has no prefixes. It can be the default sender if it's the first config.", caracat_cfg.interface, caracat_cfg.instance_id);
         }
 
         let _send_loop = SendLoop::new(
@@ -192,7 +219,8 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         let _receive_loop = ReceiveLoop::new(
             tx_async_reply_to_producer.clone(), // All receivers send to the same producer channel
             config.agent.id.clone(),
-            representative_cfg, // Use the first config for basic settings
+            representative_cfg,         // Use the first config for basic settings
+            instance_ids_for_interface, // Pass all valid instance IDs for this interface
             current_tokio_handle.clone(),
         );
         debug!(
@@ -343,23 +371,31 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
             }
         };
 
-        let target_sender_channel = determine_target_sender(
+        let target_sender_result = determine_target_sender(
             &probe_senders_map,
             &config.caracat,
             sender_ip_from_header.as_ref(),
         );
 
-        match target_sender_channel {
-            Ok(Some(sender_channel)) => {
+        match target_sender_result {
+            Ok((Some(sender_channel), use_source_ip_flag)) => {
                 debug!(
                     "Distributing {} probes to selected Caracat sender.",
                     probes_to_send.len()
                 );
 
-                // Create ProbesWithSource with the source IP from header
-                let probes_with_source = ProbesWithSource {
-                    probes: probes_to_send,
-                    source_ip: sender_ip_from_header.unwrap().clone(),
+                // Create ProbesWithSource, use source IP from header only if use_source_ip_flag is true
+                let probes_with_source = if use_source_ip_flag {
+                    ProbesWithSource {
+                        probes: probes_to_send,
+                        source_ip: sender_ip_from_header.unwrap().clone(),
+                    }
+                } else {
+                    // Use empty string to indicate no specific source IP (default behavior)
+                    ProbesWithSource {
+                        probes: probes_to_send,
+                        source_ip: String::new(),
+                    }
                 };
 
                 let send_task_join_handle =
@@ -380,7 +416,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                     }
                 }
             }
-            Ok(None) => {
+            Ok((None, _)) => {
                 error!("No suitable sender found for the provided source IP");
             }
             Err(e) => {
