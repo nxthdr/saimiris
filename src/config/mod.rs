@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod caracat;
 pub mod client;
 pub mod kafka;
 
@@ -9,6 +10,7 @@ use std::net::{IpAddr, SocketAddr};
 use tokio::net::lookup_host;
 
 pub use agent::{AgentConfig, RawAgentConfig};
+pub use caracat::CaracatConfig;
 pub use client::{parse_and_validate_client_args, ClientConfig};
 pub use kafka::KafkaConfig;
 
@@ -114,66 +116,6 @@ pub struct AppConfig {
     pub kafka: KafkaConfig,
 }
 
-// --- Caracat config (agent-specific but kept here since it's used in AppConfig) ---
-// Constants
-const DEFAULT_CARACAT_BATCH_SIZE: u64 = 100;
-const DEFAULT_CARACAT_INSTANCE_ID: u16 = 0;
-const DEFAULT_CARACAT_PACKETS: u64 = 1;
-const DEFAULT_CARACAT_PROBING_RATE: u64 = 100;
-const DEFAULT_RATE_LIMITING_METHOD: &str = "auto";
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct CaracatConfig {
-    #[serde(default = "default_caracat_batch_size")]
-    pub batch_size: u64,
-    #[serde(default = "default_caracat_instance_id")]
-    pub instance_id: u16,
-    #[serde(default)]
-    pub dry_run: bool,
-    #[serde(default)]
-    pub min_ttl: Option<u8>,
-    #[serde(default)]
-    pub max_ttl: Option<u8>,
-    #[serde(default)]
-    pub integrity_check: bool,
-    #[serde(default = "default_caracat_interface")]
-    pub interface: String,
-    #[serde(default)]
-    pub src_ipv4_prefix: Option<String>,
-    #[serde(default)]
-    pub src_ipv6_prefix: Option<String>,
-    #[serde(default = "default_caracat_packets")]
-    pub packets: u64,
-    #[serde(default = "default_caracat_probing_rate")]
-    pub probing_rate: u64,
-    #[serde(default = "default_rate_limiting_method")]
-    pub rate_limiting_method: String,
-}
-
-fn default_caracat_batch_size() -> u64 {
-    DEFAULT_CARACAT_BATCH_SIZE
-}
-
-fn default_caracat_instance_id() -> u16 {
-    DEFAULT_CARACAT_INSTANCE_ID
-}
-
-fn default_caracat_interface() -> String {
-    caracat::utilities::get_default_interface()
-}
-
-fn default_caracat_packets() -> u64 {
-    DEFAULT_CARACAT_PACKETS
-}
-
-fn default_caracat_probing_rate() -> u64 {
-    DEFAULT_CARACAT_PROBING_RATE
-}
-
-fn default_rate_limiting_method() -> String {
-    DEFAULT_RATE_LIMITING_METHOD.to_string()
-}
-
 // --- Main app config loading ---
 pub async fn app_config(config_path: &str) -> Result<AppConfig> {
     let config_source = load_config_source(config_path)?;
@@ -192,24 +134,7 @@ pub async fn app_config(config_path: &str) -> Result<AppConfig> {
 
     // Validate CaracatConfig fields for each caracat config
     for cfg in &mut caracat_configs {
-        if cfg.batch_size == 0 {
-            cfg.batch_size = default_caracat_batch_size();
-        }
-        if cfg.instance_id == 0 {
-            cfg.instance_id = default_caracat_instance_id();
-        }
-        if cfg.interface.is_empty() {
-            cfg.interface = default_caracat_interface();
-        }
-        if cfg.packets == 0 {
-            cfg.packets = default_caracat_packets();
-        }
-        if cfg.probing_rate == 0 {
-            cfg.probing_rate = default_caracat_probing_rate();
-        }
-        if cfg.rate_limiting_method.is_empty() {
-            cfg.rate_limiting_method = default_rate_limiting_method();
-        }
+        cfg.validate_and_normalize();
     }
 
     let gateway = raw_config.gateway;

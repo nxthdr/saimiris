@@ -1,9 +1,49 @@
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use tokio::task::spawn;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, warn};
 
 use crate::config::CaracatConfig;
+
+// This struct matches the AgentConfig expected by the gateway
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct GatewayAgentConfig {
+    #[serde(default)]
+    pub name: Option<String>,
+    pub batch_size: u64,
+    pub instance_id: u16,
+    pub dry_run: bool,
+    pub min_ttl: Option<u8>,
+    pub max_ttl: Option<u8>,
+    pub integrity_check: bool,
+    pub interface: String,
+    pub src_ipv4_prefix: Option<String>,
+    pub src_ipv6_prefix: Option<String>,
+    pub packets: u64,
+    pub probing_rate: u64,
+    pub rate_limiting_method: String,
+}
+
+impl From<&CaracatConfig> for GatewayAgentConfig {
+    fn from(config: &CaracatConfig) -> Self {
+        Self {
+            name: config.name.clone(),
+            batch_size: config.batch_size,
+            instance_id: config.instance_id,
+            dry_run: config.dry_run,
+            min_ttl: config.min_ttl,
+            max_ttl: config.max_ttl,
+            integrity_check: config.integrity_check,
+            interface: config.interface.clone(),
+            src_ipv4_prefix: config.src_ipv4_prefix.clone(),
+            src_ipv6_prefix: config.src_ipv6_prefix.clone(),
+            packets: config.packets,
+            probing_rate: config.probing_rate,
+            rate_limiting_method: config.rate_limiting_method.clone(),
+        }
+    }
+}
 
 pub fn spawn_healthcheck_loop(
     gateway_url: String,
@@ -97,10 +137,15 @@ pub fn spawn_healthcheck_loop(
             }
 
             // Step 4: Update agent config
+            let gateway_configs: Vec<GatewayAgentConfig> = caracat_configs
+                .iter()
+                .map(|config| GatewayAgentConfig::from(config))
+                .collect();
+
             match client
                 .post(&config_url)
                 .header("authorization", format!("Bearer {}", agent_key))
-                .json(&caracat_configs)
+                .json(&gateway_configs)
                 .send()
                 .await
             {
@@ -152,4 +197,76 @@ pub fn spawn_healthcheck_loop(
             sleep(Duration::from_secs(30)).await; // TODO: make interval configurable
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_caracat_to_gateway_config_conversion() {
+        let caracat_config = CaracatConfig {
+            name: Some("test-config".to_string()),
+            batch_size: 100,
+            instance_id: 1,
+            dry_run: false,
+            min_ttl: Some(10),
+            max_ttl: Some(255),
+            integrity_check: true,
+            interface: "eth0".to_string(),
+            src_ipv4_prefix: Some("192.168.1.0/24".to_string()),
+            src_ipv6_prefix: Some("2001:db8::/32".to_string()),
+            packets: 1000,
+            probing_rate: 100,
+            rate_limiting_method: "None".to_string(),
+        };
+
+        let gateway_config: GatewayAgentConfig = (&caracat_config).into();
+
+        assert_eq!(gateway_config.name, Some("test-config".to_string()));
+        assert_eq!(gateway_config.batch_size, 100);
+        assert_eq!(gateway_config.instance_id, 1);
+        assert_eq!(gateway_config.dry_run, false);
+        assert_eq!(gateway_config.min_ttl, Some(10));
+        assert_eq!(gateway_config.max_ttl, Some(255));
+        assert_eq!(gateway_config.integrity_check, true);
+        assert_eq!(gateway_config.interface, "eth0".to_string());
+        assert_eq!(
+            gateway_config.src_ipv4_prefix,
+            Some("192.168.1.0/24".to_string())
+        );
+        assert_eq!(
+            gateway_config.src_ipv6_prefix,
+            Some("2001:db8::/32".to_string())
+        );
+        assert_eq!(gateway_config.packets, 1000);
+        assert_eq!(gateway_config.probing_rate, 100);
+        assert_eq!(gateway_config.rate_limiting_method, "None".to_string());
+    }
+
+    #[test]
+    fn test_gateway_config_serialization() {
+        let gateway_config = GatewayAgentConfig {
+            name: Some("test-config".to_string()),
+            batch_size: 100,
+            instance_id: 1,
+            dry_run: false,
+            min_ttl: Some(10),
+            max_ttl: Some(255),
+            integrity_check: true,
+            interface: "eth0".to_string(),
+            src_ipv4_prefix: Some("192.168.1.0/24".to_string()),
+            src_ipv6_prefix: Some("2001:db8::/32".to_string()),
+            packets: 1000,
+            probing_rate: 100,
+            rate_limiting_method: "None".to_string(),
+        };
+
+        let serialized = serde_json::to_string(&gateway_config).unwrap();
+        let deserialized: GatewayAgentConfig = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(gateway_config.name, deserialized.name);
+        assert_eq!(gateway_config.batch_size, deserialized.batch_size);
+        assert_eq!(gateway_config.probing_rate, deserialized.probing_rate);
+    }
 }
