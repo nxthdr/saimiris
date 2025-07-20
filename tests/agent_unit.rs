@@ -5,9 +5,9 @@ use saimiris::config::CaracatConfig;
 use std::collections::HashMap;
 use tokio::sync::mpsc::channel;
 
-#[tokio::test]
-async fn test_determine_target_sender_ip_in_prefix() {
-    let (tx, _rx) = channel::<ProbesWithSource>(1);
+#[test]
+fn test_determine_target_sender_ip_in_prefix() {
+    let (tx, _rx) = channel::<ProbesWithSource>(100);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 
@@ -18,16 +18,17 @@ async fn test_determine_target_sender_ip_in_prefix() {
         ..Default::default()
     }];
 
-    let result = determine_target_sender(&map, &caracat_configs, Some(&"192.168.1.100".to_string()));
+    let result =
+        determine_target_sender(&map, &caracat_configs, Some(&"192.168.1.100".to_string()));
     assert!(result.is_ok());
     let (sender_option, use_source_ip) = result.unwrap();
     assert!(sender_option.is_some());
     assert!(use_source_ip); // Should use source IP when prefix is configured
 }
 
-#[tokio::test]
-async fn test_determine_target_sender_ip_not_in_prefix() {
-    let (tx, _rx) = channel::<ProbesWithSource>(1);
+#[test]
+fn test_determine_target_sender_ip_not_in_prefix() {
+    let (tx, _rx) = channel::<ProbesWithSource>(100);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 
@@ -42,9 +43,9 @@ async fn test_determine_target_sender_ip_not_in_prefix() {
     assert!(result.is_err());
 }
 
-#[tokio::test]
-async fn test_determine_target_sender_no_ip_provided() {
-    let (tx, _rx) = channel::<ProbesWithSource>(1);
+#[test]
+fn test_determine_target_sender_no_ip_provided() {
+    let (tx, _rx) = channel::<ProbesWithSource>(100);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 
@@ -59,9 +60,9 @@ async fn test_determine_target_sender_no_ip_provided() {
     assert!(result.is_err());
 }
 
-#[tokio::test]
-async fn test_determine_target_sender_ipv6_in_prefix() {
-    let (tx, _rx) = channel::<ProbesWithSource>(1);
+#[test]
+fn test_determine_target_sender_ipv6_in_prefix() {
+    let (tx, _rx) = channel::<ProbesWithSource>(100);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 
@@ -79,9 +80,9 @@ async fn test_determine_target_sender_ipv6_in_prefix() {
     assert!(use_source_ip); // Should use source IP when prefix is configured
 }
 
-#[tokio::test]
-async fn test_determine_target_sender_no_prefix() {
-    let (tx, _rx) = channel::<ProbesWithSource>(1);
+#[test]
+fn test_determine_target_sender_no_prefix() {
+    let (tx, _rx) = channel::<ProbesWithSource>(100);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx.clone());
 
@@ -100,13 +101,13 @@ async fn test_determine_target_sender_no_prefix() {
     assert!(!use_source_ip); // Should NOT use source IP when no prefix is configured
 }
 
-#[tokio::test]
-async fn test_determine_target_sender_mixed_configs() {
-    let (tx_default, _rx_default) = channel::<ProbesWithSource>(1);
-    let (tx_prefix, _rx_prefix) = channel::<ProbesWithSource>(1);
+#[test]
+fn test_determine_target_sender_mixed_configs() {
+    let (tx_default, _rx_default) = channel::<ProbesWithSource>(100);
+    let (tx_prefix, _rx_prefix) = channel::<ProbesWithSource>(100);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx_default.clone()); // Default instance
-    map.insert("instance_1".to_string(), tx_prefix.clone());  // Prefix instance
+    map.insert("instance_1".to_string(), tx_prefix.clone()); // Prefix instance
 
     let caracat_configs = vec![
         CaracatConfig {
@@ -124,7 +125,8 @@ async fn test_determine_target_sender_mixed_configs() {
     ];
 
     // Test 1: Source IP matches prefix - should use prefix instance
-    let result = determine_target_sender(&map, &caracat_configs, Some(&"192.168.1.100".to_string()));
+    let result =
+        determine_target_sender(&map, &caracat_configs, Some(&"192.168.1.100".to_string()));
     assert!(result.is_ok());
     let (sender_option, use_source_ip) = result.unwrap();
     assert!(sender_option.is_some());
@@ -145,9 +147,9 @@ async fn test_determine_target_sender_mixed_configs() {
     assert!(!use_source_ip); // Should NOT use source IP
 }
 
-#[tokio::test]
-async fn test_determine_target_sender_only_prefix_no_default() {
-    let (tx_prefix, _rx_prefix) = channel::<ProbesWithSource>(1);
+#[test]
+fn test_determine_target_sender_only_prefix_no_default() {
+    let (tx_prefix, _rx_prefix) = channel::<ProbesWithSource>(100);
     let mut map = HashMap::new();
     map.insert("instance_0".to_string(), tx_prefix.clone());
 
@@ -159,7 +161,8 @@ async fn test_determine_target_sender_only_prefix_no_default() {
     }];
 
     // Test 1: Source IP matches prefix - should work
-    let result = determine_target_sender(&map, &caracat_configs, Some(&"192.168.1.100".to_string()));
+    let result =
+        determine_target_sender(&map, &caracat_configs, Some(&"192.168.1.100".to_string()));
     assert!(result.is_ok());
     let (sender_option, use_source_ip) = result.unwrap();
     assert!(sender_option.is_some());

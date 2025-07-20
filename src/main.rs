@@ -50,6 +50,10 @@ enum Command {
         /// For IPv6 addresses, use brackets: 'agent1:[2001:db8::1],agent2:192.168.1.1'
         #[arg(index = 1, value_name = "AGENTS")]
         agents: String,
+
+        /// Measurement ID for tracking probe batches
+        #[arg(long)]
+        measurement_id: Option<String>,
     },
 }
 
@@ -132,6 +136,7 @@ async fn main() -> Result<()> {
             config,
             agents,
             probes_file,
+            measurement_id,
         } => {
             if probes_file.is_none() && stdin().is_terminal() {
                 App::command().print_help().unwrap();
@@ -139,7 +144,8 @@ async fn main() -> Result<()> {
             }
 
             // Parse and validate client arguments
-            let client_config = parse_and_validate_client_args(&agents, probes_file)?;
+            let client_config = parse_and_validate_client_args(&agents, probes_file)?
+                .with_measurement_tracking(measurement_id);
 
             let app_config = app_config(&config).await?;
             trace!("{:?}", app_config);

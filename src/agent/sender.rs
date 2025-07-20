@@ -10,17 +10,17 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use tokio::runtime::Handle as TokioHandle;
-use tokio::sync::mpsc::Receiver as TokioReceiver;
 use tracing::warn;
 use tracing::{debug, error, info, trace};
 
 use crate::config::CaracatConfig;
 
-// Type to represent probes with their source IP
+// Type to represent probes with their source IP and measurement tracking info
 #[derive(Debug)]
 pub struct ProbesWithSource {
     pub probes: Vec<Probe>,
     pub source_ip: String,
+    pub measurement_info: Option<crate::agent::gateway::MeasurementInfo>,
 }
 
 pub struct SendLoop {
@@ -30,11 +30,19 @@ pub struct SendLoop {
 
 impl SendLoop {
     pub fn new(
-        mut rx: TokioReceiver<ProbesWithSource>,
-        agent_id: String,
+        mut rx: tokio::sync::mpsc::Receiver<ProbesWithSource>,
         config: CaracatConfig,
+        app_config: &crate::config::AppConfig,
         runtime_handle: TokioHandle,
     ) -> Self {
+        // Extract needed values from app_config
+        let agent_id = app_config.agent.id.clone();
+        let gateway_url = app_config.gateway.as_ref().and_then(|g| g.url.clone());
+        let agent_key = app_config
+            .gateway
+            .as_ref()
+            .and_then(|g| g.agent_key.clone());
+
         let method = match config.rate_limiting_method.to_lowercase().as_str() {
             "auto" => RateLimitingMethod::Auto,
             "active" => RateLimitingMethod::Active,
@@ -64,6 +72,8 @@ impl SendLoop {
 
             // Cache of CaracatSender instances per source IP
             let mut caracat_senders: HashMap<String, CaracatSender> = HashMap::new();
+            // Track probes sent per measurement
+            let mut probes_sent_in_measurement: HashMap<String, u32> = HashMap::new();
 
             // Extra logging for debugging SendLoop lifecycle
             info!("SendLoop for interface {} is running.", config.interface);
@@ -74,10 +84,20 @@ impl SendLoop {
                     break;
                 }
 
+                trace!(
+                    "SendLoop waiting for probes on interface: {}",
+                    config.interface
+                );
                 let probes_with_source = match thread_runtime_handle.block_on(rx.recv()) {
-                    Some(p) => p,
+                    Some(p) => {
+                        trace!(
+                            "SendLoop successfully received probes from channel for interface: {}",
+                            config.interface
+                        );
+                        p
+                    }
                     None => {
-                        error!(
+                        info!(
                             "Probe channel closed for SendLoop on interface {}. Exiting loop.",
                             config.interface
                         );
@@ -86,7 +106,11 @@ impl SendLoop {
                 };
 
                 let source_ip = probes_with_source.source_ip.clone();
+                let measurement_info = probes_with_source.measurement_info.clone();
                 let probes = probes_with_source.probes;
+
+                trace!("SendLoop received {} probes for interface {}, source_ip: {}, measurement_id: {:?}",
+                       probes.len(), config.interface, source_ip, measurement_info.as_ref().map(|m| &m.measurement_id));
 
                 counter!("saimiris_sender_read_total", metrics_labels.clone())
                     .increment(probes.len().try_into().unwrap_or(0));
@@ -99,10 +123,24 @@ impl SendLoop {
                     source_ip.clone()
                 };
 
+                trace!(
+                    "SendLoop determining sender key: use_default_source={}, sender_key={}",
+                    use_default_source,
+                    sender_key
+                );
+
                 // Get or create CaracatSender for this sender key
+                trace!(
+                    "SendLoop looking for existing sender for key: {}",
+                    sender_key
+                );
                 let caracat_sender = match caracat_senders.get_mut(&sender_key) {
-                    Some(sender) => sender,
+                    Some(sender) => {
+                        trace!("SendLoop found existing sender for key: {}", sender_key);
+                        sender
+                    }
                     None => {
+                        trace!("SendLoop creating new sender for key: {}", sender_key);
                         let (src_ipv4, src_ipv6) = if use_default_source {
                             // Use default behavior - let CaracatSender choose source IPs
                             (None, None)
@@ -125,16 +163,45 @@ impl SendLoop {
                             }
                         };
 
-                        let caracat_sender_result = CaracatSender::new(
-                            &config.interface,
-                            src_ipv4,
-                            src_ipv6,
-                            config.instance_id,
-                            config.dry_run,
-                        );
+                        trace!("SendLoop attempting to create CaracatSender with src_ipv4: {:?}, src_ipv6: {:?}", src_ipv4, src_ipv6);
+
+                        // Create the sender with a timeout to prevent hanging
+                        let interface_name = config.interface.clone();
+                        let instance_id = config.instance_id;
+                        let dry_run = config.dry_run;
+
+                        let caracat_sender_result = thread_runtime_handle.block_on(async {
+                            match tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                tokio::task::spawn_blocking(move || {
+                                    CaracatSender::new(
+                                        &interface_name,
+                                        src_ipv4,
+                                        src_ipv6,
+                                        instance_id,
+                                        dry_run,
+                                    )
+                                }),
+                            )
+                            .await
+                            {
+                                Ok(Ok(join_result)) => join_result,
+                                Ok(Err(e)) => Err(anyhow::anyhow!(
+                                    "CaracatSender::new() task panicked: {:?}",
+                                    e
+                                )),
+                                Err(_) => Err(anyhow::anyhow!(
+                                    "CaracatSender::new() timed out after 5 seconds"
+                                )),
+                            }
+                        });
 
                         match caracat_sender_result {
                             Ok(sender) => {
+                                trace!(
+                                    "SendLoop successfully created CaracatSender for key: {}",
+                                    sender_key
+                                );
                                 if use_default_source {
                                     debug!(
                                         "Created new CaracatSender with default source IP behavior on interface {}",
@@ -150,6 +217,7 @@ impl SendLoop {
                                 caracat_senders.get_mut(&sender_key).unwrap()
                             }
                             Err(e) => {
+                                trace!("SendLoop failed to create CaracatSender for key: {}, error: {}", sender_key, e);
                                 if use_default_source {
                                     error!(
                                         "Failed to create Caracat sender with default source IP behavior on interface {}: {}. Skipping probes.",
@@ -177,8 +245,6 @@ impl SendLoop {
                         );
                         return;
                     }
-
-                    trace!("{:?}", probe);
 
                     if let Some(ttl) = config.min_ttl {
                         if probe.ttl < ttl {
@@ -222,6 +288,46 @@ impl SendLoop {
                         }
                         if (sent_count_batch) % config.batch_size == 0 && sent_count_batch > 0 {
                             rate_limiter.wait();
+                        }
+                    }
+                }
+
+                // Report measurement status if we have measurement info
+                if let Some(ref measurement_info) = measurement_info {
+                    *probes_sent_in_measurement
+                        .entry(measurement_info.measurement_id.clone())
+                        .or_insert(0) += sent_count_batch as u32;
+
+                    // Report status to gateway if configured
+                    if let (Some(ref gateway_url), Some(ref agent_key)) = (&gateway_url, &agent_key)
+                    {
+                        let total_sent = *probes_sent_in_measurement
+                            .get(&measurement_info.measurement_id)
+                            .unwrap_or(&0);
+
+                        // Use runtime handle to run async code in this thread
+                        match thread_runtime_handle.block_on(
+                            crate::agent::gateway::report_measurement_status(
+                                gateway_url.as_str(),
+                                &agent_id,
+                                agent_key.as_str(),
+                                &measurement_info.measurement_id,
+                                total_sent,
+                                measurement_info.end_of_measurement,
+                            ),
+                        ) {
+                            Ok(_) => tracing::debug!(
+                                "Reported measurement status for {}: {} probes sent, completed: {}",
+                                measurement_info.measurement_id,
+                                total_sent,
+                                measurement_info.end_of_measurement
+                            ),
+                            Err(e) => tracing::warn!("Failed to report measurement status: {}", e),
+                        }
+
+                        // Clean up tracking for completed measurements
+                        if measurement_info.end_of_measurement {
+                            probes_sent_in_measurement.remove(&measurement_info.measurement_id);
                         }
                     }
                 }

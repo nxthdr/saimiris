@@ -6,6 +6,20 @@ use tracing::{debug, error, warn};
 
 use crate::config::CaracatConfig;
 
+// Structure to hold measurement tracking information from Kafka headers
+#[derive(Debug, Clone)]
+pub struct MeasurementInfo {
+    pub measurement_id: String,
+    pub end_of_measurement: bool,
+}
+
+// Structure for reporting measurement status to gateway
+#[derive(Debug, Clone, Serialize)]
+struct MeasurementStatusUpdate {
+    sent_probes: u32,
+    is_complete: bool,
+}
+
 // This struct matches the AgentConfig expected by the gateway
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct GatewayAgentConfig {
@@ -197,6 +211,55 @@ pub fn spawn_healthcheck_loop(
             sleep(Duration::from_secs(30)).await; // TODO: make interval configurable
         }
     });
+}
+
+/// Report measurement status to the gateway
+pub async fn report_measurement_status(
+    gateway_url: &str,
+    agent_id: &str,
+    agent_key: &str,
+    measurement_id: &str,
+    sent_probes: u32,
+    is_complete: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let base_url = gateway_url.trim_end_matches('/').to_string();
+    let status_url = format!(
+        "{}/agent-api/agent/{}/measurement/{}/status",
+        base_url, agent_id, measurement_id
+    );
+
+    let client = Client::new();
+    let status_update = MeasurementStatusUpdate {
+        sent_probes,
+        is_complete,
+    };
+
+    debug!(
+        "Reporting measurement status to gateway: measurement_id={}, sent_probes={}, is_complete={}",
+        measurement_id, sent_probes, is_complete
+    );
+
+    let response = client
+        .post(&status_url)
+        .header("authorization", format!("Bearer {}", agent_key))
+        .json(&status_update)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        debug!(
+            "Successfully reported measurement status for measurement {}",
+            measurement_id
+        );
+        Ok(())
+    } else {
+        let error_msg = format!(
+            "Failed to report measurement status: HTTP {}",
+            response.status()
+        );
+        error!("{}", error_msg);
+        Err(error_msg.into())
+    }
 }
 
 #[cfg(test)]

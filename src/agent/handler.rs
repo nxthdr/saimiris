@@ -135,7 +135,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
         let (tx_probe_to_sender, rx_probes_for_sender): (
             Sender<ProbesWithSource>,
             Receiver<ProbesWithSource>,
-        ) = channel(100000); // Probes for this specific SendLoop
+        ) = channel(100); // Probes for this specific SendLoop
 
         if default_probe_sender_channel.is_none() {
             default_probe_sender_channel = Some(tx_probe_to_sender.clone());
@@ -170,8 +170,8 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
         let _send_loop = SendLoop::new(
             rx_probes_for_sender,
-            config.agent.id.clone(),
             caracat_cfg.clone(),
+            config,
             current_tokio_handle.clone(),
         );
         debug!(
@@ -298,6 +298,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
 
         let mut is_intended_for_this_agent = false;
         let mut sender_ip_from_header: Option<String> = None;
+        let mut measurement_info: Option<crate::agent::gateway::MeasurementInfo> = None;
 
         if let Some(headers) = message.headers() {
             debug!("Message has {} headers", headers.count());
@@ -311,7 +312,7 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                     debug!("Found header for agent ID: {}", config.agent.id);
                     is_intended_for_this_agent = true;
                     if let Some(value_bytes) = header.value {
-                        // Parse the JSON header value to extract src_ip
+                        // Parse the JSON header value to extract measurement info
                         if let Ok(header_str) = String::from_utf8(value_bytes.to_vec()) {
                             if let Ok(agent_info) =
                                 serde_json::from_str::<serde_json::Value>(&header_str)
@@ -322,6 +323,24 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                                     .and_then(|v| v.as_str())
                                     .map(|s| s.to_string());
                                 debug!("Extracted src_ip: {:?}", sender_ip_from_header);
+
+                                // Extract measurement tracking information
+                                if let (Some(measurement_id), Some(end_of_measurement)) = (
+                                    agent_info.get("measurement_id").and_then(|v| v.as_str()),
+                                    agent_info
+                                        .get("end_of_measurement")
+                                        .and_then(|v| v.as_bool()),
+                                ) {
+                                    measurement_info =
+                                        Some(crate::agent::gateway::MeasurementInfo {
+                                            measurement_id: measurement_id.to_string(),
+                                            end_of_measurement,
+                                        });
+                                    debug!(
+                                        "Extracted measurement info: measurement_id={}, end_of_measurement={}",
+                                        measurement_id, end_of_measurement
+                                    );
+                                }
                             }
                         }
                     }
@@ -384,35 +403,30 @@ pub async fn handle(config: &AppConfig) -> Result<()> {
                     probes_to_send.len()
                 );
 
+                let probes_count = probes_to_send.len();
                 // Create ProbesWithSource, use source IP from header only if use_source_ip_flag is true
                 let probes_with_source = if use_source_ip_flag {
                     ProbesWithSource {
                         probes: probes_to_send,
                         source_ip: sender_ip_from_header.unwrap().clone(),
+                        measurement_info: measurement_info.clone(),
                     }
                 } else {
                     // Use empty string to indicate no specific source IP (default behavior)
                     ProbesWithSource {
                         probes: probes_to_send,
                         source_ip: String::new(),
+                        measurement_info: measurement_info.clone(),
                     }
                 };
 
-                let send_task_join_handle =
-                    spawn(async move { sender_channel.send(probes_with_source).await });
-
-                match send_task_join_handle.await {
-                    Ok(Ok(())) => {
+                trace!("Attempting to send {} probes to selected sender instance via async channel", probes_count);
+                match sender_channel.try_send(probes_with_source) {
+                    Ok(()) => {
                         trace!("Probes successfully queued for the selected sender instance via async send.");
                     }
-                    Ok(Err(send_err)) => {
+                    Err(send_err) => {
                         error!("Failed to send probes to selected Caracat sender (async channel error): {}. SendLoop may have exited.", send_err);
-                    }
-                    Err(join_err) => {
-                        error!(
-                            "Async task for sending probes to selected sender panicked: {}",
-                            join_err
-                        );
                     }
                 }
             }

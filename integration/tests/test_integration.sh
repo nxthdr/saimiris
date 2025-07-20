@@ -273,6 +273,22 @@ run_integration_test() {
         else
             print_warning "Agent may not have processed probe messages successfully"
         fi
+
+        # Check for measurement tracking features in logs
+        if grep -q "measurement_id" /tmp/saimiris_agent.log; then
+            print_status "Agent detected measurement tracking headers in Kafka messages"
+        else
+            print_status "No measurement tracking headers detected (expected if client doesn't send them)"
+        fi
+
+        # Check for gateway status reporting attempts
+        if grep -q "Reported measurement status" /tmp/saimiris_agent.log; then
+            print_status "Agent successfully reported measurement status to gateway"
+        elif grep -q "Failed to report measurement status" /tmp/saimiris_agent.log; then
+            print_status "Agent attempted to report measurement status (gateway connection expected to fail in test environment)"
+        else
+            print_status "No gateway status reporting detected (expected without gateway configuration)"
+        fi
     fi
 
     # Verify data in ClickHouse or successful probe processing
@@ -315,6 +331,53 @@ run_integration_test() {
         fi
     fi
 
+    return 0
+}
+
+# Function to test measurement tracking
+test_measurement_tracking() {
+    print_status "Testing measurement tracking functionality..."
+
+    cd "$SAIMIRIS_ROOT"
+
+    # Run measurement tracking unit tests
+    print_status "Running measurement tracking unit tests..."
+    if cargo test --quiet measurement_tracking::test_measurement_info_parsing; then
+        print_success "Measurement info parsing test passed"
+    else
+        print_error "Measurement info parsing test failed"
+        return 1
+    fi
+
+    if cargo test --quiet measurement_tracking::test_probes_with_source_measurement_info; then
+        print_success "ProbesWithSource measurement info test passed"
+    else
+        print_error "ProbesWithSource measurement info test failed"
+        return 1
+    fi
+
+    if cargo test --quiet measurement_tracking::test_kafka_header_parsing; then
+        print_success "Kafka header parsing test passed"
+    else
+        print_error "Kafka header parsing test failed"
+        return 1
+    fi
+
+    if cargo test --quiet measurement_tracking::test_end_to_end_measurement_tracking; then
+        print_success "End-to-end measurement tracking test passed"
+    else
+        print_error "End-to-end measurement tracking test failed"
+        return 1
+    fi
+
+    if cargo test --quiet measurement_tracking::test_measurement_tracking_state_management; then
+        print_success "Measurement tracking state management test passed"
+    else
+        print_error "Measurement tracking state management test failed"
+        return 1
+    fi
+
+    print_success "All measurement tracking tests passed"
     return 0
 }
 
@@ -368,6 +431,14 @@ main() {
         print_success "CLI tests passed"
     else
         print_error "CLI tests failed"
+        exit 1
+    fi
+
+    # Run measurement tracking tests (unit tests, no Docker needed)
+    if test_measurement_tracking; then
+        print_success "Measurement tracking tests passed"
+    else
+        print_error "Measurement tracking tests failed"
         exit 1
     fi
 

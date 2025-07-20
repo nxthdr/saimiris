@@ -74,6 +74,8 @@ pub fn parse_and_validate_client_args(
             Ok(MeasurementInfo {
                 name: agent_name.to_string(),
                 src_ip: Some(ip_str.to_string()),
+                // Default measurement tracking value - can be overridden later
+                measurement_id: None,
             })
         })
         .collect::<Result<Vec<MeasurementInfo>>>()?;
@@ -86,6 +88,16 @@ pub fn parse_and_validate_client_args(
         measurement_infos,
         probes_file,
     })
+}
+
+impl ClientConfig {
+    /// Set measurement tracking information for all agents in this configuration
+    pub fn with_measurement_tracking(mut self, measurement_id: Option<String>) -> Self {
+        for agent in &mut self.measurement_infos {
+            agent.measurement_id = measurement_id.clone();
+        }
+        self
+    }
 }
 
 #[cfg(test)]

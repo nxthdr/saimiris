@@ -14,6 +14,8 @@ use crate::probe::serialize_probe;
 pub struct MeasurementInfo {
     pub name: String,
     pub src_ip: Option<String>,
+    // Measurement tracking fields
+    pub measurement_id: Option<String>,
 }
 
 pub fn create_messages(probes: Vec<Probe>, message_max_bytes: usize) -> Vec<Vec<u8>> {
@@ -65,6 +67,8 @@ pub async fn produce(
 
     // Construct headers
     let mut headers = OwnedHeaders::new();
+
+    // Add agent-specific headers
     for agent in &agents {
         // Serialize all agent info into a single header value
         let agent_info_json = serde_json::json!({
@@ -76,6 +80,17 @@ pub async fn produce(
             key: &agent.name,
             value: Some(&agent_info_str),
         });
+    }
+
+    // Add measurement tracking headers if provided
+    // Take measurement info from the first agent (assuming all agents share the same measurement)
+    if let Some(first_agent) = agents.first() {
+        if let Some(ref measurement_id) = first_agent.measurement_id {
+            headers = headers.insert(Header {
+                key: "measurement_id",
+                value: Some(measurement_id),
+            });
+        }
     }
 
     // Place probes into Kafka messages
@@ -90,13 +105,22 @@ pub async fn produce(
     );
 
     // Send to Kafka
-    for message in messages {
+    for (message_index, message) in messages.iter().enumerate() {
+        let is_last_message = message_index == messages.len() - 1;
+
+        // Clone headers and add end_of_measurement for this specific message
+        let mut message_headers = headers.clone();
+        message_headers = message_headers.insert(Header {
+            key: "end_of_measurement",
+            value: Some(&is_last_message.to_string()),
+        });
+
         let delivery_status = producer
             .send(
                 FutureRecord::to(topic)
-                    .payload(&message)
+                    .payload(message)
                     .key(&format!(""))
-                    .headers(headers.clone()),
+                    .headers(message_headers),
                 Duration::from_secs(0),
             )
             .await;
