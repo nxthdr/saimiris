@@ -100,12 +100,12 @@ pub async fn produce(
 
         let metric_name = "saimiris_kafka_messages_total";
         match delivery_status {
-            Ok((partition, offset)) => {
+            Ok(delivery) => {
                 counter!(metric_name, "agent" => config.agent.id.clone(), "status" => "success")
                     .increment(1);
                 debug!(
                     "successfully sent message to partition {} at offset {}",
-                    partition, offset
+                    delivery.partition, delivery.offset
                 );
             }
             Err((error, _)) => {
