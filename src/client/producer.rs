@@ -126,10 +126,10 @@ pub async fn produce(
             .await;
 
         match delivery_status {
-            Ok((partition, offset)) => {
+            Ok(delivery) => {
                 info!(
                     "successfully sent message to partition {} at offset {}",
-                    partition, offset
+                    delivery.partition, delivery.offset
                 );
             }
             Err((error, _)) => {
