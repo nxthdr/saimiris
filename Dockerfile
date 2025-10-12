@@ -1,4 +1,4 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1-trixie AS chef
 WORKDIR /app
 
 FROM chef AS planner
@@ -14,7 +14,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release --bin saimiris
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 RUN apt-get update \
     && apt-get install -y libpcap-dev libsasl2-dev libssl-dev ca-certificates \
     && update-ca-certificates \
