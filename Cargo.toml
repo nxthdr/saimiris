@@ -42,7 +42,7 @@ tracing-subscriber = "0.3.19"
 uuid = { version = "1.8", features = ["v4", "fast-rng"] }
 
 [build-dependencies]
-capnpc = "0.22.0"
+capnpc = "0.23.0"
 
 [dev-dependencies]
 tempfile = "3.10"

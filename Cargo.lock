@@ -226,12 +226,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "capnpc"
-version = "0.22.0"
+name = "capnp"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1af1ceeadd28bef56425e170308d287dad0e28f43978cd6b02d3bb1bf7b822fe"
+checksum = "bbffb6e69e1ea2cf518ac5037a78a223ecb82b4ac81e7ab33cb5211b43d712ac"
 dependencies = [
- "capnp",
+ "embedded-io",
+]
+
+[[package]]
+name = "capnpc"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8428f03dbc01d1abfe2ec4408cb941c64dd6b60d8cd0dae6dbf1983ca26c62a"
+dependencies = [
+ "capnp 0.23.0",
 ]
 
 [[package]]
@@ -2128,7 +2137,7 @@ name = "saimiris"
 version = "0.1.1"
 dependencies = [
  "anyhow",
- "capnp",
+ "capnp 0.22.0",
  "capnpc",
  "caracat",
  "chrono",
