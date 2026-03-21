@@ -21,7 +21,7 @@ struct Reply {
     probeProtocol       @17 :UInt8;
     probeSrcPort        @18 :UInt16;
     probeDstPort        @19 :UInt16;
-    rtt                 @20 :UInt16;
+    rtt                 @20 :UInt16;  # In tenths of milliseconds (0.1ms). Max representable: 6553.5ms.
 }
 
 struct Mpls {
