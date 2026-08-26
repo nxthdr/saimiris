@@ -3,12 +3,14 @@ use caracat::rate_limiter::RateLimiter;
 use caracat::rate_limiter::RateLimitingMethod;
 use caracat::sender::Sender as CaracatSender;
 use metrics::counter;
+use metrics::gauge;
 use metrics::Label;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 use tokio::runtime::Handle as TokioHandle;
 use tracing::warn;
 use tracing::{debug, error, info, trace};
@@ -23,12 +25,90 @@ pub struct ProbesWithSource {
     pub measurement_info: Option<crate::agent::gateway::MeasurementInfo>,
 }
 
+// Maximum number of CaracatSender instances (one per probe source IP) kept per
+// SendLoop, and how long an unused one is kept before being dropped.
+const MAX_CACHED_SENDERS: usize = 16;
+const SENDER_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+// A cached value and the last time it was used. CaracatSender instances hold
+// AF_PACKET ring buffers (several MB of pinned memory), so idle ones are
+// dropped instead of being kept for the lifetime of the process.
+struct Cached<T> {
+    value: T,
+    last_used: Instant,
+}
+
+// Drop entries that have not been used for `idle_timeout`, releasing whatever
+// they hold. Returns the number of entries evicted.
+fn evict_idle_entries<T>(
+    entries: &mut HashMap<String, Cached<T>>,
+    idle_timeout: Duration,
+) -> usize {
+    let before = entries.len();
+    let now = Instant::now();
+
+    entries.retain(|key, cached| {
+        let idle_for = now.duration_since(cached.last_used);
+        if idle_for < idle_timeout {
+            return true;
+        }
+        debug!(
+            "Dropping cached entry {} after {}s idle",
+            key,
+            idle_for.as_secs()
+        );
+        false
+    });
+
+    before - entries.len()
+}
+
+// Make room for one more entry by evicting the least recently used ones.
+// Returns the number of entries evicted.
+fn evict_lru_entries<T>(entries: &mut HashMap<String, Cached<T>>, max_entries: usize) -> usize {
+    let mut evicted = 0;
+
+    while entries.len() >= max_entries {
+        let lru_key = match entries
+            .iter()
+            .min_by_key(|(_, cached)| cached.last_used)
+            .map(|(key, _)| key.clone())
+        {
+            Some(key) => key,
+            None => break,
+        };
+
+        warn!(
+            "Cache is full ({} entries), evicting least recently used entry {}",
+            entries.len(),
+            lru_key
+        );
+        entries.remove(&lru_key);
+        evicted += 1;
+    }
+
+    evicted
+}
+
 pub struct SendLoop {
     handle: JoinHandle<()>,
     stopped: Arc<Mutex<bool>>,
 }
 
 impl SendLoop {
+    fn count_evicted_senders(evicted: u64, reason: &'static str, metrics_labels: &[Label]) {
+        let mut labels = metrics_labels.to_vec();
+        labels.push(Label::new("reason", reason));
+        counter!("saimiris_sender_cache_evicted_total", labels).increment(evicted);
+    }
+
+    fn report_cache_size(
+        senders: &HashMap<String, Cached<CaracatSender>>,
+        metrics_labels: &[Label],
+    ) {
+        gauge!("saimiris_sender_cache_size", metrics_labels.to_vec()).set(senders.len() as f64);
+    }
+
     pub fn new(
         mut rx: tokio::sync::mpsc::Receiver<ProbesWithSource>,
         config: CaracatConfig,
@@ -70,8 +150,11 @@ impl SendLoop {
         let handle = thread::spawn(move || {
             debug!("SendLoop thread started for interface: {}", interface_name);
 
-            // Cache of CaracatSender instances per source IP
-            let mut caracat_senders: HashMap<String, CaracatSender> = HashMap::new();
+            // Cache of CaracatSender instances per source IP, bounded by
+            // MAX_CACHED_SENDERS and evicted once idle: each entry pins
+            // AF_PACKET ring buffers, so an unbounded cache would grow with the
+            // number of source IPs ever seen by this agent.
+            let mut caracat_senders: HashMap<String, Cached<CaracatSender>> = HashMap::new();
             // Track probes sent per measurement
             let mut probes_sent_in_measurement: HashMap<String, u32> = HashMap::new();
 
@@ -134,10 +217,17 @@ impl SendLoop {
                     "SendLoop looking for existing sender for key: {}",
                     sender_key
                 );
+                let evicted = evict_idle_entries(&mut caracat_senders, SENDER_IDLE_TIMEOUT);
+                if evicted > 0 {
+                    Self::count_evicted_senders(evicted as u64, "idle", &metrics_labels);
+                    Self::report_cache_size(&caracat_senders, &metrics_labels);
+                }
+
                 let caracat_sender = match caracat_senders.get_mut(&sender_key) {
-                    Some(sender) => {
+                    Some(cached) => {
                         trace!("SendLoop found existing sender for key: {}", sender_key);
-                        sender
+                        cached.last_used = Instant::now();
+                        &mut cached.value
                     }
                     None => {
                         trace!("SendLoop creating new sender for key: {}", sender_key);
@@ -213,8 +303,24 @@ impl SendLoop {
                                         source_ip, config.interface
                                     );
                                 }
-                                caracat_senders.insert(sender_key.clone(), sender);
-                                caracat_senders.get_mut(&sender_key).unwrap()
+                                let evicted =
+                                    evict_lru_entries(&mut caracat_senders, MAX_CACHED_SENDERS);
+                                if evicted > 0 {
+                                    Self::count_evicted_senders(
+                                        evicted as u64,
+                                        "capacity",
+                                        &metrics_labels,
+                                    );
+                                }
+                                caracat_senders.insert(
+                                    sender_key.clone(),
+                                    Cached {
+                                        value: sender,
+                                        last_used: Instant::now(),
+                                    },
+                                );
+                                Self::report_cache_size(&caracat_senders, &metrics_labels);
+                                &mut caracat_senders.get_mut(&sender_key).unwrap().value
                             }
                             Err(e) => {
                                 trace!("SendLoop failed to create CaracatSender for key: {}, error: {}", sender_key, e);
@@ -351,5 +457,62 @@ impl SendLoop {
             Ok(_) => info!("SendLoop successfully joined."),
             Err(e) => error!("Error joining SendLoop thread: {:?}", e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cache(keys: &[&str]) -> HashMap<String, Cached<u32>> {
+        keys.iter()
+            .enumerate()
+            .map(|(index, key)| {
+                (
+                    key.to_string(),
+                    Cached {
+                        value: index as u32,
+                        // Distinct, increasing timestamps, so the least
+                        // recently used entry is predictable.
+                        last_used: Instant::now() + Duration::from_secs(index as u64),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_evict_idle_entries_keeps_recently_used() {
+        let mut entries = cache(&["a", "b"]);
+        assert_eq!(
+            evict_idle_entries(&mut entries, Duration::from_secs(300)),
+            0
+        );
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn test_evict_idle_entries_drops_idle() {
+        let mut entries = cache(&["a", "b"]);
+        assert_eq!(evict_idle_entries(&mut entries, Duration::ZERO), 2);
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_evict_lru_entries_makes_room_for_one() {
+        let mut entries = cache(&["a", "b", "c"]);
+        assert_eq!(evict_lru_entries(&mut entries, 3), 1);
+        assert_eq!(entries.len(), 2);
+        // "a" is the least recently used, so it is the one that goes.
+        assert!(!entries.contains_key("a"));
+        assert!(entries.contains_key("b"));
+        assert!(entries.contains_key("c"));
+    }
+
+    #[test]
+    fn test_evict_lru_entries_noop_below_capacity() {
+        let mut entries = cache(&["a", "b"]);
+        assert_eq!(evict_lru_entries(&mut entries, 16), 0);
+        assert_eq!(entries.len(), 2);
     }
 }
